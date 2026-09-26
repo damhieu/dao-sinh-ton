@@ -212,6 +212,24 @@ const PARTS = [
 ];
 
 const ZERO = new THREE.Matrix4().makeScale(0, 0, 0);
+// which look colour tints each part (gear parts keep their vertex colours)
+const PART_COLOR = {
+  pelvis: "pants",
+  thigh: "pants",
+  shin: "pants",
+  torso: "shirt",
+  uArm: "shirt",
+  fArm: "shirt",
+  neck: "skin",
+  head: "skin",
+  hand: "skin",
+  hair: "hair",
+  cap: "capColor",
+};
+const WHITE = new THREE.Color(1, 1, 1);
+const _frustum = new THREE.Frustum();
+const _pm = new THREE.Matrix4();
+const _sphere = new THREE.Sphere();
 
 // scratch
 const mRoot = new THREE.Matrix4();
@@ -323,32 +341,18 @@ export class RigRenderer {
       hidden: false,
     };
     const L = ch.look;
-    const setC = (name, color, k = 0) => {
-      const m = this.meshes[name];
-      m.setColorAt(slot * m.userData.per + k, _col.set(color));
-      m.instanceColor.needsUpdate = true;
-    };
-    setC("pelvis", L.pants);
-    setC("thigh", L.pants, 0);
-    setC("thigh", L.pants, 1);
-    setC("shin", L.pants, 0);
-    setC("shin", L.pants, 1);
-    setC("torso", L.shirt);
-    setC("uArm", L.shirt, 0);
-    setC("uArm", L.shirt, 1);
-    setC("fArm", L.shirt, 0);
-    setC("fArm", L.shirt, 1);
-    setC("neck", L.skin);
-    setC("head", L.skin);
-    setC("hand", L.skin, 0);
-    setC("hand", L.skin, 1);
-    setC("hair", L.hair);
-    setC("cap", L.capColor);
-    for (const name of Object.keys(this.meshes)) {
-      const m = this.meshes[name];
-      m.count = Math.max(m.count, (slot + 1) * m.userData.per);
-    }
+    ch.rigColors = {};
+    for (const key of new Set(Object.values(PART_COLOR))) ch.rigColors[key] = new THREE.Color(L[key]);
     return slot;
+  }
+
+  // append one part instance for this frame (only visible characters and worn gear are emitted)
+  emit(ch, name, m) {
+    const mesh = this.meshes[name];
+    const i = mesh.count++;
+    mesh.setMatrixAt(i, m);
+    const c = PART_COLOR[name];
+    mesh.setColorAt(i, c ? ch.rigColors[c] : WHITE);
   }
 
   // Smoothly track gameplay state for animation
@@ -392,8 +396,6 @@ export class RigRenderer {
   pose(ch, write) {
     const a = ch.anim;
     const b = ch.body;
-    const slot = ch.rigSlot;
-    const M = this.meshes;
     const speedN = Math.min(1, a.speed / 4.7);
     const upright = 1 - Math.max(a.prone, a.freefall, a.dead, a.sit);
 
@@ -426,24 +428,20 @@ export class RigRenderer {
     a.chestMatrix.copy(mChest);
     a.headMatrix.copy(mHead);
     if (write) {
-      M.pelvis.setMatrixAt(slot, mPelvis);
-      M.torso.setMatrixAt(slot, mChest);
-      M.neck.setMatrixAt(slot, mChest);
-      M.head.setMatrixAt(slot, mHead);
+      this.emit(ch, "pelvis", mPelvis);
+      this.emit(ch, "torso", mChest);
+      this.emit(ch, "neck", mChest);
+      this.emit(ch, "head", mHead);
       const inv = ch.inv;
-      const hw = inv.helmet ? `helmet${inv.helmet.level}` : ch.look.headwear;
-      for (const n of ["hair", "cap", "helmet1", "helmet2", "helmet3"])
-        M[n].setMatrixAt(slot, n === hw ? mHead : ZERO);
-      const vest = inv.vest ? `vest${inv.vest.level}` : "";
-      for (const n of ["vest1", "vest2", "vest3"]) M[n].setMatrixAt(slot, n === vest ? mChest : ZERO);
-      const pack = inv.backpack ? `pack${inv.backpack}` : "";
-      for (const n of ["pack1", "pack2", "pack3"]) M[n].setMatrixAt(slot, n === pack ? mChest : ZERO);
+      this.emit(ch, inv.helmet ? `helmet${inv.helmet.level}` : ch.look.headwear, mHead);
+      if (inv.vest) this.emit(ch, `vest${inv.vest.level}`, mChest);
+      if (inv.backpack) this.emit(ch, `pack${inv.backpack}`, mChest);
       if (ch.mode === "chute" && ch.chuteOpen > 0.02) {
         const s = ch.chuteOpen;
         mTmp2.makeScale(s, s, s);
         mSeg.multiplyMatrices(mPelvis, mTmp2);
-        M.chute.setMatrixAt(slot, mSeg);
-      } else M.chute.setMatrixAt(slot, ZERO);
+        this.emit(ch, "chute", mSeg);
+      }
     }
 
     // ---- legs
@@ -457,7 +455,11 @@ export class RigRenderer {
       let thighPitch = swing * Math.cos(a.moveAngle);
       let thighRoll = -swing * Math.sin(a.moveAngle) * 0.6 + s * 0.04;
       // knee bends while the leg swings forward (cos > 0), a little at push-off
-      let knee = (Math.max(0, Math.cos(ph)) * lerp(0.95, 1.7, a.sprint) * speedN + Math.max(0, -sw) * 0.25 * speedN + 0.06) * upright;
+      let knee =
+        (Math.max(0, Math.cos(ph)) * lerp(0.95, 1.7, a.sprint) * speedN +
+          Math.max(0, -sw) * 0.25 * speedN +
+          0.06) *
+        upright;
       thighPitch += 1.35 * a.crouch * upright + sw * 0.18 * a.crouch * speedN;
       knee += 2.05 * a.crouch * upright;
       // prone crawl: small alternating kicks
@@ -481,9 +483,9 @@ export class RigRenderer {
       const footPitch = (knee - thighPitch) * 0.6 * (1 - a.prone) + a.prone * 0.9;
       child(mFoot, mShin, 0, -SHIN, 0, footPitch, 0, 0);
       if (write) {
-        M.thigh.setMatrixAt(slot * 2 + side, mThigh);
-        M.shin.setMatrixAt(slot * 2 + side, mShin);
-        M.boot.setMatrixAt(slot * 2 + side, mFoot);
+        this.emit(ch, "thigh", mThigh);
+        this.emit(ch, "shin", mShin);
+        this.emit(ch, "boot", mFoot);
       }
       // hitboxes: thigh & shin
       this.hitSeg(ch, 7 + side * 2, mThigh, 0, 0, 0, 0, -THIGH, 0, 0.09);
@@ -567,15 +569,15 @@ export class RigRenderer {
         solveTwoBone(vShoulder, vTarget, UPPER_ARM, FOREARM, vPole, vElbow, vWrist);
         vHint.set(0, 0, -1).transformDirection(mChest);
         segment(mSeg, vShoulder, vElbow, vHint);
-        if (write) M.uArm.setMatrixAt(slot * 2 + side, mSeg);
+        if (write) this.emit(ch, "uArm", mSeg);
         this.hitSeg(ch, 3 + side * 2, mSeg, 0, 0, 0, 0, -UPPER_ARM, 0, 0.07);
         segment(mSeg, vElbow, vWrist, vHint);
-        if (write) M.fArm.setMatrixAt(slot * 2 + side, mSeg);
+        if (write) this.emit(ch, "fArm", mSeg);
         this.hitSeg(ch, 4 + side * 2, mSeg, 0, 0, 0, 0, -FOREARM, 0, 0.06);
         vC.subVectors(vWrist, vElbow).normalize();
         vA.copy(vWrist).addScaledVector(vC, 0.1);
         segment(mSeg, vWrist, vA, vHint);
-        if (write) M.hand.setMatrixAt(slot * 2 + side, mSeg);
+        if (write) this.emit(ch, "hand", mSeg);
       } else {
         // FK: free arm swing / freefall spread / dead
         const ph = a.phase + (side === 0 ? 0 : Math.PI);
@@ -589,13 +591,13 @@ export class RigRenderer {
         rollA = lerp(rollA, s * 0.9, a.dead);
         elbow = lerp(elbow, 0.3, a.dead);
         child(mSeg, mChest, s * 0.19, 0.4, 0, pitchA, 0, rollA);
-        if (write) M.uArm.setMatrixAt(slot * 2 + side, mSeg);
+        if (write) this.emit(ch, "uArm", mSeg);
         this.hitSeg(ch, 3 + side * 2, mSeg, 0, 0, 0, 0, -UPPER_ARM, 0, 0.07);
         child(mTmp2, mSeg, 0, -UPPER_ARM, 0, elbow, 0, 0);
-        if (write) M.fArm.setMatrixAt(slot * 2 + side, mTmp2);
+        if (write) this.emit(ch, "fArm", mTmp2);
         this.hitSeg(ch, 4 + side * 2, mTmp2, 0, 0, 0, 0, -FOREARM, 0, 0.06);
         child(mSeg, mTmp2, 0, -FOREARM, 0, 0.1, 0, 0);
-        if (write) M.hand.setMatrixAt(slot * 2 + side, mSeg);
+        if (write) this.emit(ch, "hand", mSeg);
       }
     }
 
@@ -621,21 +623,9 @@ export class RigRenderer {
     hb[o + 6] = r;
   }
 
-  hide(ch) {
-    const slot = ch.rigSlot;
-    for (const name of Object.keys(this.meshes)) {
-      const m = this.meshes[name];
-      for (let k = 0; k < m.userData.per; k++) m.setMatrixAt(slot * m.userData.per + k, ZERO);
-    }
-  }
-
   reset() {
     this.chars = [];
-    for (const m of Object.values(this.meshes)) {
-      for (let i = 0; i < m.count; i++) m.setMatrixAt(i, ZERO);
-      m.count = 0;
-      m.instanceMatrix.needsUpdate = true;
-    }
+    for (const m of Object.values(this.meshes)) m.count = 0;
   }
 
   // Make sure hitboxes are current (for bullets hitting characters that weren't posed this frame)
@@ -645,22 +635,36 @@ export class RigRenderer {
 
   update(dt, camera, maxDist = 700) {
     this.frame++;
+    for (const m of Object.values(this.meshes)) m.count = 0;
+    // characters outside the view are skipped, except close ones whose shadows may reach the screen
+    camera.updateMatrixWorld();
+    _frustum.setFromProjectionMatrix(
+      _pm.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse),
+    );
     const cx = camera.position.x;
     const cz = camera.position.z;
     for (const ch of this.chars) {
-      const d = Math.hypot(ch.body.x - cx, ch.body.z - cz);
-      const hidden =
+      const b = ch.body;
+      const d = Math.hypot(b.x - cx, b.z - cz);
+      let hidden =
         ch.anim.hidden || d > maxDist || ch.mode === "plane" || (ch.mode === "vehicle" && !ch.showInVehicle);
+      if (!hidden && d > 25) {
+        _sphere.center.set(b.x, b.y + 1, b.z);
+        _sphere.radius = ch.mode === "chute" ? 6 : 2;
+        hidden = !_frustum.intersectsSphere(_sphere);
+      }
       this.updateAnim(ch, dt);
       ch.anim.poseVisible = !hidden;
       if (hidden) {
-        this.hide(ch);
         a_weaponOff(ch);
         continue;
       }
       this.pose(ch, true);
     }
-    for (const name of Object.keys(this.meshes)) this.meshes[name].instanceMatrix.needsUpdate = true;
+    for (const m of Object.values(this.meshes)) {
+      m.instanceMatrix.needsUpdate = true;
+      m.instanceColor.needsUpdate = true;
+    }
   }
 }
 
@@ -669,7 +673,6 @@ function a_weaponOff(ch) {
 }
 
 const _identity = new THREE.Matrix4();
-const _col = new THREE.Color();
 
 export const HITBOX_PARTS = [
   "head",

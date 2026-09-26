@@ -96,7 +96,6 @@ export function createWater(data, noiseTex, heightTex, ctx) {
   geo.rotateX(-Math.PI / 2);
   const mesh = new THREE.Mesh(geo, mat);
   mesh.renderOrder = 1;
-  mesh.receiveShadow = true;
   mesh.frustumCulled = false;
   ctx.scene.add(mesh);
 

@@ -53,7 +53,10 @@ function rrtInv(y) {
   return (-b - Math.sqrt(Math.max(0, b * b - 4 * a * c))) / (2 * a);
 }
 export function inverseAces(target, exposure = 1) {
-  const t = mul(OUT_INV, target.map((x) => Math.min(0.97, Math.max(0, x))));
+  const t = mul(
+    OUT_INV,
+    target.map((x) => Math.min(0.97, Math.max(0, x))),
+  );
   const v = mul(IN_INV, t.map(rrtInv));
   return v.map((x) => Math.max(0, (x * 0.6) / exposure));
 }
@@ -173,12 +176,12 @@ export function createSky(ctx, assets) {
       SkyShader.fragmentShader,
     side: THREE.BackSide,
     depthWrite: false,
-    depthTest: false,
     fog: false,
     toneMapped: false,
   });
   const sky = new THREE.Mesh(new THREE.SphereGeometry(10, 64, 32), skyMat);
-  sky.renderOrder = -1000;
+  // drawn after the opaque scene at the far plane, so only uncovered pixels are shaded
+  sky.renderOrder = 1000;
   sky.frustumCulled = false;
   sky.onBeforeRender = (r, s, cam) => sky.position.copy(cam.position);
   scene.add(sky);

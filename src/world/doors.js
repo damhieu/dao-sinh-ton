@@ -13,7 +13,7 @@ function leafGeometry(w, h) {
   const pos = g.attributes.position;
   for (let i = 0; i < uv.count; i++) uv.setXY(i, (pos.getX(i) + pos.getZ(i)) / 2, pos.getY(i) / 2);
   // door knob
-  const knob = new THREE.SphereGeometry(0.035, 8, 6);
+  const knob = new THREE.SphereGeometry(0.035, 6, 4);
   knob.translate(w - 0.1, 1.0, THICK / 2 + 0.03);
   const knob2 = knob.clone().translate(0, 0, -THICK - 0.06);
   for (const k of [knob, knob2]) {
