@@ -54,9 +54,29 @@ function ftanh(x) {
   return (x * (27 + x2)) / (27 + 9 * x2);
 }
 
+// Sine lookup table (phase in cycles, linear interpolation; error < -120 dB). Much cheaper than
+// Math.sin in the per-sample loops of oscillators whose frequency changes every sample.
+const SIN_N = 4096;
+const SIN = new Float32Array(SIN_N + 1);
+for (let i = 0; i <= SIN_N; i++) SIN[i] = Math.sin((TAU * i) / SIN_N);
+
+/** sin(2π·p) for a phase p already wrapped to [0, 1). */
+function tsin(p) {
+  const x = p * SIN_N;
+  const j = x | 0;
+  return SIN[j] + (SIN[j + 1] - SIN[j]) * (x - j);
+}
+
+/** White noise in [-1, 1): xorshift32 seeded from `rng` (much cheaper than one rng() per sample). */
 function noise(n, rng) {
   const a = new Float32Array(n);
-  for (let i = 0; i < n; i++) a[i] = rng() * 2 - 1;
+  let x = (rng() * 4294967295) >>> 0 || 0x9e3779b9;
+  for (let i = 0; i < n; i++) {
+    x ^= x << 13;
+    x ^= x >>> 17;
+    x ^= x << 5;
+    a[i] = (x | 0) * 4.656612873077393e-10;
+  }
   return a;
 }
 
@@ -334,7 +354,7 @@ function burst(out, sr, rng, o) {
 /** Pitch-swept sine "thump" (f0 → f1 exponentially), optionally saturated for punch. Peak ≈ gain. */
 function thump(out, sr, o) {
   const at = Math.round((o.t || 0) * sr);
-  const n = Math.min(ns(sr, o.tau * 9 + 0.01), out.length - at);
+  const n = Math.min(ns(sr, o.tau * 7.5 + 0.01), out.length - at);
   if (n <= 0) return;
   const ka = Math.exp(-1 / ((o.att || 0.001) * sr));
   const kd = Math.exp(-1 / (o.tau * sr));
@@ -342,15 +362,15 @@ function thump(out, sr, o) {
   const drive = o.drive || 0;
   const dn = drive > 0 ? 1 / ftanh(drive) : 1;
   const g = o.gain ?? 1;
-  const w = TAU / sr;
   let ph = 0;
   let fd = o.f0 - o.f1;
   let a = 1;
   let d = 1;
   for (let i = 0; i < n; i++) {
-    ph += w * (o.f1 + fd);
+    ph += (o.f1 + fd) / sr;
+    if (ph >= 1) ph -= 1;
     fd *= ks;
-    let v = Math.sin(ph) * (1 - a) * d;
+    let v = tsin(ph) * (1 - a) * d;
     if (drive > 0) v = ftanh(v * drive) * dn;
     out[at + i] += v * g;
     a *= ka;
@@ -425,11 +445,17 @@ function grains(out, sr, rng, o) {
 function bubble(out, sr, t, f0, rise, tau, gain) {
   const at = Math.round(t * sr);
   const n = Math.min(ns(sr, tau * 6), out.length - at);
+  const ka = Math.exp(-1 / (0.0006 * sr));
+  const kd = Math.exp(-1 / (tau * sr));
+  let a = 1;
+  let d = gain;
   let ph = 0;
   for (let i = 0; i < n; i++) {
-    const tt = i / sr;
-    ph += (TAU * f0 * (1 + rise * tt)) / sr;
-    out[at + i] += Math.sin(ph) * (1 - Math.exp(-tt / 0.0006)) * Math.exp(-tt / tau) * gain;
+    ph += (f0 * (1 + (rise * i) / sr)) / sr;
+    if (ph >= 1) ph -= 1;
+    out[at + i] += tsin(ph) * (1 - a) * d;
+    a *= ka;
+    d *= kd;
   }
 }
 
@@ -509,11 +535,12 @@ function rustle(out, sr, rng, t, dur, gain, fc = 2200, bumps = 5) {
  * (u = 0..1 over the sound) exciting narrow resonances res = [[freq, q, amp], ...].
  */
 function creak(out, sr, rng, t, dur, fFn, gain, res) {
-  const n = ns(sr, dur);
+  const nd = ns(sr, dur);
+  const n = nd + ns(sr, 0.04); // room for the resonances to ring out
   const p = new Float32Array(n);
   let ph = 0;
-  for (let i = 0; i < n; i++) {
-    const u = i / n;
+  for (let i = 0; i < nd; i++) {
+    const u = i / nd;
     ph += (fFn(u) * (1 + (rng() - 0.5) * 0.3)) / sr;
     if (ph >= 1) {
       ph -= 1;
@@ -555,12 +582,22 @@ function zipper(out, sr, rng, t, dur, r0, r1, gain) {
 function chirp(out, sr, t, dur, fFn, gain, h2 = 0.12, shape = 0.8) {
   const at = Math.round(t * sr);
   const n = Math.min(ns(sr, dur), out.length - at);
+  const env = (u) => Math.pow(Math.sin(Math.PI * Math.min(1, u)), shape) * gain;
   let ph = 0;
+  let inc = 0;
+  let e = 0;
+  let de = 0;
   for (let i = 0; i < n; i++) {
-    const u = i / n;
-    ph += (TAU * fFn(u)) / sr;
-    const e = Math.pow(Math.sin(Math.PI * u), shape);
-    out[at + i] += (Math.sin(ph) + h2 * Math.sin(2 * ph)) * e * gain;
+    if ((i & 7) === 0) {
+      inc = fFn(i / n) / sr;
+      e = env(i / n);
+      de = (env((i + 8) / n) - e) / 8;
+    }
+    ph += inc;
+    if (ph >= 1) ph -= 1;
+    const p2 = ph < 0.5 ? ph * 2 : ph * 2 - 1;
+    out[at + i] += (tsin(ph) + h2 * tsin(p2)) * e;
+    e += de;
   }
 }
 
@@ -573,9 +610,11 @@ function whine(out, sr, rng, t, dur, f0, f1, gain) {
   let ph = 0;
   for (let i = 0; i < n; i++) {
     const tt = i / sr;
-    const f = f0 * Math.pow(ratio, i / n) * (1 + 0.012 * Math.sin(TAU * vib * tt));
+    const u = i / n;
+    const f = f0 * Math.pow(ratio, u) * (1 + 0.012 * Math.sin(TAU * vib * tt));
     ph += (TAU * f) / sr;
-    out[at + i] += Math.sin(ph) * (1 - Math.exp(-tt / 0.004)) * Math.exp(-tt / (dur * 0.35)) * gain;
+    const tail = u > 0.75 ? (1 - u) * 4 : 1;
+    out[at + i] += Math.sin(ph) * (1 - Math.exp(-tt / 0.004)) * Math.exp(-tt / (dur * 0.35)) * tail * gain;
   }
 }
 
@@ -600,33 +639,44 @@ function blep(t, dt) {
 function synth(out, sr, o) {
   const { t, dur, f, gain = 1, att = 0.02, rel = 0.1, detune = 0.004, sq = 0, bright = 5, vib = 0 } = o;
   const at = Math.round(t * sr);
-  const n = Math.min(ns(sr, dur + rel * 4), out.length - at);
+  const nd = ns(sr, dur);
+  const n = Math.min(nd + ns(sr, rel * 4.5), out.length - at);
   if (n <= 0) return;
   const s = new Float32Array(n);
   const env = new Float32Array(n);
-  const sus = 0.78 + 0.22 * Math.exp(-Math.max(0, dur - att) / 0.12);
+  const na = ns(sr, att);
+  const kDec = Math.exp(-1 / (0.12 * sr));
+  const kRel = Math.exp(-1 / (rel * sr));
+  const fade = ns(sr, 0.01);
+  let e = 0;
+  let dec = 1;
   let p1 = 0;
   let p2 = 0.5;
+  let d1 = 0;
+  let d2 = 0;
   for (let i = 0; i < n; i++) {
-    const tt = i / sr;
-    const e =
-      tt < att
-        ? tt / att
-        : tt < dur
-          ? 0.78 + 0.22 * Math.exp(-(tt - att) / 0.12)
-          : sus * Math.exp(-(tt - dur) / rel);
-    env[i] = e;
-    let fr = o.glide ? f * o.glide(tt) : f;
-    if (vib > 0 && tt > 0.12) fr *= 1 + vib * Math.min(1, (tt - 0.12) / 0.2) * Math.sin(TAU * 5.3 * tt);
-    const d1 = (fr * (1 + detune)) / sr;
-    const d2 = (fr * (1 - detune)) / sr;
+    // Pitch (glide / delayed vibrato) at control rate.
+    if ((i & 15) === 0) {
+      const tt = i / sr;
+      let fr = o.glide ? f * o.glide(tt) : f;
+      if (vib > 0 && tt > 0.12) fr *= 1 + vib * Math.min(1, (tt - 0.12) / 0.2) * Math.sin(TAU * 5.3 * tt);
+      d1 = (fr * (1 + detune)) / sr;
+      d2 = (fr * (1 - detune)) / sr;
+    }
+    // Envelope: linear attack, gentle decay to 0.78 sustain, exponential release, 10 ms end fade.
+    if (i < na) e = i / na;
+    else if (i < nd) {
+      e = 0.78 + 0.22 * dec;
+      dec *= kDec;
+    } else e *= kRel;
+    env[i] = n - i < fade ? (e * (n - i)) / fade : e;
     p1 += d1;
     if (p1 >= 1) p1 -= 1;
     p2 += d2;
     if (p2 >= 1) p2 -= 1;
     let v = 2 * p1 - 1 - blep(p1, d1) + (2 * p2 - 1 - blep(p2, d2));
     if (sq > 0) v += sq * 2 * ((p1 < 0.5 ? 1 : -1) + blep(p1, d1) - blep((p1 + 0.5) % 1, d1));
-    s[i] = v * e;
+    s[i] = v * env[i];
   }
   const cut = o.cut || ((tt) => f * (1.1 + bright * env[Math.min(n - 1, Math.round(tt * sr))]));
   svf(s, sr, LP, 0.9, cut);
@@ -886,7 +936,8 @@ function gunshot(rng, sr, g) {
     sv: [LP, g.tlp, 280, g.tlt * 1.4, 0.6],
   });
   scaleTo(out, 1);
-  return softClip(out, g.drive);
+  softClip(out, g.drive);
+  return fadeOut(out, sr, 0.25);
 }
 
 /** Suppressed shot: muffled gas "thwip" where the mechanical action becomes the dominant sound. */
@@ -967,7 +1018,7 @@ function distantShot(rng, sr) {
   filt(rum, "lp", 700, 0.7, sr);
   filt(rum, "hp", 35, 0.7, sr);
   mix(out, scaleTo(rum, 0.5), sr, 0.01);
-  return out;
+  return fadeOut(out, sr, 0.4);
 }
 
 function reloadOut(rng, sr) {
@@ -1156,14 +1207,14 @@ function impactConcrete(rng, sr, v) {
 }
 
 function impactMetal(rng, sr, v) {
-  const out = new Float32Array(ns(sr, 0.9));
+  const out = new Float32Array(ns(sr, 1.3));
   const f = vary(rng, [1250, 1700, 2200][v % 3], 0.05);
   nwave(out, sr, 0.001, 0.0002, 0.5);
   burst(out, sr, rng, { t: 0.001, dur: 0.02, att: 0, tau: 0.002, gain: 0.7, f: [["hp", 3000, 0.7]] });
   const ratios = [1, 1.58, 2.24, 2.92, 3.87, 4.6];
   const amps = [1, 0.7, 0.55, 0.4, 0.3, 0.2];
-  const taus = [0.35, 0.25, 0.18, 0.12, 0.08, 0.06];
-  const modes = ratios.map((r, i) => [f * r * rr(rng, 0.98, 1.02), amps[i], taus[i] * rr(rng, 0.8, 1.2)]);
+  const taus = [0.3, 0.22, 0.16, 0.11, 0.075, 0.055];
+  const modes = ratios.map((r, i) => [f * r * rr(rng, 0.98, 1.02), amps[i], taus[i] * rr(rng, 0.85, 1.1)]);
   modal(out, sr, 0.001, modes, 0.9);
   modal(
     out,
@@ -1175,7 +1226,7 @@ function impactMetal(rng, sr, v) {
     ],
     0.4,
   );
-  return out;
+  return fadeOut(out, sr, 0.3);
 }
 
 function impactWood(rng, sr) {
@@ -1300,21 +1351,21 @@ function impactGlass(rng, sr) {
 
 /** Bright ding of a round glancing off a steel helmet (beating partial pair gives the shimmer). */
 function helmetDing(rng, sr) {
-  const out = new Float32Array(ns(sr, 1.0));
+  const out = new Float32Array(ns(sr, 1.5));
   const f = vary(rng, 2900, 0.05);
   const partials = [
-    [1, 1, 0.45],
-    [1.004, 0.6, 0.4],
-    [2.05, 0.5, 0.3],
-    [2.76, 0.6, 0.25],
-    [3.9, 0.3, 0.15],
-    [5.2, 0.2, 0.1],
+    [1, 1, 0.35],
+    [1.004, 0.6, 0.3],
+    [2.05, 0.5, 0.24],
+    [2.76, 0.6, 0.2],
+    [3.9, 0.3, 0.12],
+    [5.2, 0.2, 0.08],
   ];
   modal(
     out,
     sr,
     0.001,
-    partials.map(([r, a, tau]) => [f * r, a, tau * rr(rng, 0.85, 1.15)]),
+    partials.map(([r, a, tau]) => [f * r, a, tau * rr(rng, 0.85, 1.1)]),
     1,
   );
   modal(
@@ -1329,7 +1380,7 @@ function helmetDing(rng, sr) {
   );
   burst(out, sr, rng, { t: 0.001, dur: 0.02, att: 0, tau: 0.002, gain: 0.6, f: [["hp", 3000, 0.7]] });
   thump(out, sr, { t: 0.001, f0: 200, f1: 110, sweep: 0.008, tau: 0.02, gain: 0.3 });
-  return out;
+  return fadeOut(out, sr, 0.3);
 }
 
 /** Bullet passing close by: supersonic crack followed by a Doppler-swept whizz. */
@@ -1794,19 +1845,19 @@ function pills(rng, sr) {
 /** Soft bell-like chime tone. */
 function chime(out, sr, t, f, gain) {
   const modes = [
-    [f, 1, 0.5],
-    [f * 2, 0.25, 0.3],
-    [f * 3.01, 0.12, 0.18],
-    [f * 4.2, 0.06, 0.1],
+    [f, 1, 0.32],
+    [f * 2, 0.25, 0.2],
+    [f * 3.01, 0.12, 0.12],
+    [f * 4.2, 0.06, 0.07],
   ];
   modal(out, sr, t, modes, gain, 0.003);
 }
 
 function healDone(rng, sr) {
-  const out = new Float32Array(ns(sr, 1.3));
+  const out = new Float32Array(ns(sr, 1.8));
   chime(out, sr, 0.005, 880, 0.7);
   chime(out, sr, 0.125, 1318.5, 0.8);
-  return out;
+  return fadeOut(out, sr, 0.3);
 }
 
 function inventoryOpen(rng, sr) {
@@ -1870,15 +1921,23 @@ function planeLoop(rng, sr) {
   const tab = wavetable(rng, 4096, amps);
   for (const d of [0, 0.25, -0.5, 0.75]) addTable(drone, sr, tab, 68 + d, rr(rng, 0.8, 1), rng());
   const swell = lfo(n, rng, [1, 2, 3], [1, 0.5, 0.3]);
-  for (let i = 0; i < n; i++) drone[i] *= 0.85 + 0.1 * Math.sin((TAU * 17 * i) / sr) + 0.08 * swell[i];
+  for (let i = 0, ph = 0; i < n; i++) {
+    drone[i] *= 0.85 + 0.1 * tsin(ph) + 0.08 * swell[i]; // shaft-rate flutter (17 Hz)
+    ph += 17 / sr;
+    if (ph >= 1) ph -= 1;
+  }
   scaleTo(drone, 1);
   const rumble = band(n, rng, sr, [["lp", 180, 0.7]]);
   const air = band(n, rng, sr, [["bp", 1200, 0.5]]);
   const out = new Float32Array(n);
+  let w1 = 0;
+  let w2 = 0;
   for (let i = 0; i < n; i++) {
-    const t = i / sr;
-    const whine = 0.03 * Math.sin(TAU * 3100 * t) + 0.018 * Math.sin(TAU * 4650.25 * t);
-    out[i] = drone[i] + 0.6 * rumble[i] + 0.22 * air[i] + whine;
+    out[i] = drone[i] + 0.6 * rumble[i] + 0.22 * air[i] + 0.03 * tsin(w1) + 0.018 * tsin(w2); // + turbine whine
+    w1 += 3100 / sr;
+    if (w1 >= 1) w1 -= 1;
+    w2 += 4650.25 / sr;
+    if (w2 >= 1) w2 -= 1;
   }
   return out;
 }
@@ -2155,7 +2214,7 @@ function bird(rng, sr, v) {
 
 /** "The zone is shrinking" warning: two rising siren whoops with an octave-down layer and tremolo. */
 function zoneAlarm(rng, sr) {
-  const out = new Float32Array(ns(sr, 2.0));
+  const out = new Float32Array(ns(sr, 2.3));
   const top = 1 + 0.85 * (1 - Math.exp(-0.5 / 0.14));
   const glide = (tt) =>
     tt < 0.5 ? 1 + 0.85 * (1 - Math.exp(-tt / 0.14)) : top - 0.6 * Math.min(1, (tt - 0.5) / 0.25);
@@ -2499,7 +2558,8 @@ function panHit(rng, sr, v) {
   for (let i = 0; i < R.length; i++) {
     const fi = f * R[i] * rr(rng, 0.99, 1.01);
     const tau = T[i] * rr(rng, 0.85, 1.15);
-    modes.push([fi, A[i], tau], [fi * rr(rng, 1.002, 1.004), A[i] * 0.6, tau * 0.9]);
+    modes.push([fi, A[i], tau]);
+    if (i < 6) modes.push([fi * rr(rng, 1.002, 1.004), A[i] * 0.6, tau * 0.9]); // beating twin → shimmer
   }
   modal(out, sr, 0.001, modes, 1);
   modal(
@@ -2559,7 +2619,7 @@ function uiHover(rng, sr) {
 }
 
 function uiAlert(rng, sr) {
-  const out = new Float32Array(ns(sr, 0.9));
+  const out = new Float32Array(ns(sr, 1.2));
   const ping = (t, f, tau) =>
     modal(
       out,
@@ -2574,8 +2634,8 @@ function uiAlert(rng, sr) {
       0.002,
     );
   ping(0.005, 987.8, 0.12);
-  ping(0.145, 1318.5, 0.2);
-  return out;
+  ping(0.145, 1318.5, 0.15);
+  return fadeOut(out, sr, 0.2);
 }
 
 function killConfirm(rng, sr) {
@@ -2831,7 +2891,7 @@ export const SOUND_DEFS = {
   hover: def(UI, 1, uiHover, { gain: 0.15 }),
   alert: def(UI, 1, uiAlert, { gain: 0.45 }),
   kill_confirm: def(UI, 1, killConfirm, { gain: 0.5 }),
-  victory: def(UI, 1, victory, { gain: 0.6, send2d: 0.15 }),
+  victory: def(UI, 1, victory, { lo: true, gain: 0.6, send2d: 0.15 }),
   death: def(UI, 1, death, { lo: true, gain: 0.55, send2d: 0.15 }),
 };
 

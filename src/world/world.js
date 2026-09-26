@@ -7,6 +7,8 @@ import { createWater } from "./water.js";
 import { CollisionWorld } from "./collision.js";
 import { createBuildings } from "./buildings.js";
 import { Doors } from "./doors.js";
+import { createVegetation } from "./vegetation.js";
+import { createGrass, createGrassDensity } from "./grass.js";
 
 // setTimeout (not rAF) so loading also progresses while the tab is hidden
 const nextFrame = () => new Promise((r) => setTimeout(r, 0));
@@ -30,6 +32,11 @@ export async function createWorld(ctx, assets, onProgress = () => {}) {
   const bld = createBuildings(data, collision, assets, ctx.scene);
   const doors = new Doors(ctx.scene, collision, assets);
   doors.build(bld.buildings);
+  onProgress(0.8, "Trồng cây");
+  await nextFrame();
+  const vegetation = createVegetation(data, collision, assets, ctx, ctx.preset);
+  const grassDensity = createGrassDensity(data);
+  let grass = createGrass(data, heightTex, terrain.noiseTex, grassDensity, ctx, ctx.preset);
   onProgress(1, "Xong");
 
   return {
@@ -43,13 +50,29 @@ export async function createWorld(ctx, assets, onProgress = () => {}) {
     buildings: bld.buildings,
     buildingTris: bld.tris,
     doors,
+    vegetation,
+    grassDensity,
+    get grass() {
+      return grass;
+    },
+    // rebuild quality-dependent parts (grass radius) after a preset change
+    applyQuality(preset) {
+      for (const m of grass.meshes) {
+        ctx.scene.remove(m);
+        m.geometry.dispose();
+      }
+      grass = createGrass(data, heightTex, terrain.noiseTex, grassDensity, ctx, preset);
+      sky.setShadowQuality(preset.shadowSize, preset.shadowRange);
+    },
     isLand(x, z) {
       return data.hm.getHeight(x, z) > 1.5;
     },
-    update(dt, time, focus) {
+    update(dt, time, focus, camPos) {
       sky.update(focus);
       water.update(time);
       doors.update(dt);
+      vegetation.update(dt, time, camPos);
+      grass.update(time, camPos);
     },
   };
 }

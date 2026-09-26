@@ -113,7 +113,7 @@ function update(dt, t) {
     player.ctrl.pitch = Math.atan2(ap.y - sy, Math.hypot(ap.x - b.x, ap.z - b.z));
   }
   rig.update(dt, ctx.camera);
-  world.update(dt, t, fly.on ? ctx.camera.position : player.body);
+  world.update(dt, t, fly.on ? ctx.camera.position : player.body, ctx.camera.position);
 }
 
 canvas.addEventListener("click", () => input.lock());
