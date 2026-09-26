@@ -217,9 +217,12 @@ export function createSky(ctx, assets) {
 
   function update(focus) {
     const texel = (state.range * 2) / state.size;
-    const px = Math.round(focus.dot(lx) / texel) * texel;
-    const py = Math.round(focus.dot(ly) / texel) * texel;
-    const pz = focus.dot(lz);
+    const fx = focus.x;
+    const fy = focus.y;
+    const fz = focus.z;
+    const px = Math.round((fx * lx.x + fy * lx.y + fz * lx.z) / texel) * texel;
+    const py = Math.round((fx * ly.x + fy * ly.y + fz * ly.z) / texel) * texel;
+    const pz = fx * lz.x + fy * lz.y + fz * lz.z;
     tmp.set(0, 0, 0).addScaledVector(lx, px).addScaledVector(ly, py).addScaledVector(lz, pz);
     sun.target.position.copy(tmp);
     sun.position.copy(tmp).addScaledVector(sunDir, 700);
