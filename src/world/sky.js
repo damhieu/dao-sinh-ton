@@ -148,8 +148,10 @@ const SkyShader = {
       vec3 c = texture2D(tSky, uv).rgb;
       // below the horizon: repeat the haze just above it (same azimuth) so the far sea edge blends in
       vec3 haze = vec3(0.0);
-      for (int k = -3; k <= 3; k++) haze += texture2D(tSky, vec2(uv.x + float(k) * 0.012, 0.5 + 0.03)).rgb;
-      haze /= 7.0;
+      for (int k = -3; k <= 3; k++) haze += texture2D(tSky, vec2(uv.x + float(k) * 0.02, 0.5 + 0.03)).rgb;
+      // mostly the flat horizon colour (what fogged distant water fades to): seen from the plane this
+      // band is a few degrees tall and per-azimuth photo colours would read as vertical streaks
+      haze = mix(uHorizon, haze / 7.0, 0.35);
       c = mix(haze, c, smoothstep(-0.002, 0.02, d.y));
       gl_FragColor = vec4(inverseAces(c), 1.0);
     }
