@@ -20,6 +20,9 @@ import { makeNames } from "../actors/names.js";
 import { Plane } from "./plane.js";
 import { ZoneSchedule } from "./zone.js";
 import { ZoneWall } from "./zonewall.js";
+import { Grenades } from "../combat/grenades.js";
+import { AirdropSystem } from "./airdrop.js";
+import { Vehicles, VEHICLE_TYPES } from "./vehicles.js";
 
 const _v = new THREE.Vector3();
 const _o = { x: 0, y: 0, z: 0 };
@@ -53,6 +56,9 @@ export class Match {
     this.plane = null;
     this.airdrops = [];
     this.visTimer = 0;
+    this.grenades = new Grenades(this);
+    this.smoke = this.grenades;
+    this.vehicles = new Vehicles(this);
   }
 
   // Bots with a spread of skill: ~30% rookies, ~50% average, ~20% veterans
@@ -67,6 +73,25 @@ export class Match {
       this.bots.push(ch.bot);
     }
     return this.bots;
+  }
+
+  // Autopilot: the player's character is driven by the bot AI (for automated full-match tests)
+  setAutopilot(on) {
+    const p = this.player;
+    if (on && !p.bot) {
+      p.bot = new BotController(p, this, this.rng.fork(999), { skill: 0.75, aggression: 0.6 });
+      if (p.mode === "plane" || p.mode === "freefall" || p.mode === "chute") {
+        const t = this.world.data.towns[Math.floor(this.rng.next() * this.world.data.towns.length)];
+        p.bot.dropTarget = { x: t.x, z: t.z };
+        p.bot.jumpDist = 420;
+      }
+      p.bot.lootUntil = this.time + 90;
+      this.bots.push(p.bot);
+    } else if (!on && p.bot) {
+      this.bots.splice(this.bots.indexOf(p.bot), 1);
+      p.bot = null;
+    }
+    this.controller.enabled = !on;
   }
 
   // smoke grenades block line of sight (set up by the grenade system)
@@ -262,6 +287,11 @@ export class Match {
         best = { type: p.crate ? "crate" : "pickup", target: p, dist: d };
       }
     }
+    const veh = this.vehicles.nearest(ch);
+    if (veh) {
+      const vd = Math.hypot(veh.pos.x - b.x, veh.pos.z - b.z) - 1.2;
+      if (!best || vd < best.dist) best = { type: "vehicle", target: veh, dist: vd };
+    }
     const di = this.world.doors.nearest(b.x + fx * 0.6, b.y + 1, b.z + fz * 0.6, 1.6);
     if (di >= 0) {
       const d = this.world.doors.list[di];
@@ -279,6 +309,7 @@ export class Match {
       events.emit("door", { ch, door: d, open: d.target > 0.5 });
       return true;
     }
+    if (t.type === "vehicle") return this.vehicles.enter(ch, t.target);
     if (t.type === "pickup") return this.takePickup(ch, t.target);
     if (t.type === "crate") {
       events.emit("openCrate", { ch, crate: t.target });
@@ -531,6 +562,7 @@ export class Match {
       speed,
     });
     this.zoneWall = new ZoneWall(this.ctx.scene);
+    this.airdropSystem = new AirdropSystem(this);
     this.createBots(bots);
     const towns = this.world.data.towns;
     const weight = { military: 3, port: 2.4, oldtown: 3, school: 1.6, factory: 1.8, radar: 1.2, fishing: 1, farm: 1 };
@@ -660,11 +692,18 @@ export class Match {
         if (this.state === "plane") this.state = "playing";
       }
     }
-    // player input
+    // player input (or autopilot)
     c.update(dt);
-    if (p.alive) {
+    if (p.bot) {
+      c.viewYaw = p.bot.aimYaw;
+      c.viewPitch = p.bot.aimPitch;
+      this.gcam.yaw = c.viewYaw;
+      this.gcam.pitch = c.viewPitch;
+    }
+    if (p.alive && !p.bot) {
       if (p.mode === "plane" && p.ctrl.interact && this.canJump) this.jump(p);
       else if (p.mode === "ground" && p.ctrl.interact) this.interact(p);
+      else if (p.mode === "vehicle" && p.ctrl.interact) this.vehicles.exit(p);
       if (p.mode === "ground") this.updatePlayerAim();
       else {
         p.ctrl.pitch = c.viewPitch;

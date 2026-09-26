@@ -306,6 +306,9 @@ installDebugApi({
   timescale(s) {
     app.timeScale = s;
   },
+  autopilot(on = true) {
+    app.match.setAutopilot(on);
+  },
   stats() {
     return { fps: Math.round(fps), ...ctx.frameStats, pixelRatio: ctx.renderer.getPixelRatio() };
   },

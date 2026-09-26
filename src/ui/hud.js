@@ -75,6 +75,7 @@ export class HUD {
     );
     this.wname = el("div", "wname", this.weaponsBox);
     this.wmode = el("div", "wmode", this.weaponsBox);
+    this.vehicle = el("div", "vehiclehud", this.root, '<div class="spd"><b>0</b> km/h</div><div class="vhp"><i></i></div>');
     this.slots = el("div", "slots", this.root);
     this.slotEls = [0, 1, 2, 3, 4].map((i) =>
       el("div", "slot", this.slots, `<span class="k">${i + 1}</span><img alt=""><span class="nm"></span>`),
@@ -113,6 +114,7 @@ export class HUD {
       if (e.state === "waiting" && e.phase === 0) this.showNotice("VÙNG AN TOÀN ĐÃ XUẤT HIỆN", "HÃY DI CHUYỂN VÀO VÒNG TRẮNG");
       else if (e.state === "shrinking") this.showNotice("BO ĐANG THU HẸP!", `GIAI ĐOẠN ${e.phase + 1}`);
     });
+    events.on("airdropIncoming", () => this.showNotice("THÍNH ĐANG ĐƯỢC THẢ!", "XEM VỊ TRÍ TRÊN BẢN ĐỒ"));
     events.on("pickupFail", (e) => {
       if (e.ch.isPlayer)
         this.showSub(e.reason === "heavy" ? "Balo mới không chứa đủ đồ đang mang" : "Túi đồ đã đầy");
@@ -262,6 +264,7 @@ export class HUD {
     let prompt = "";
     if (it) {
       if (it.type === "door") prompt = m.world.doors.list[it.target].target > 0.5 ? "Đóng cửa" : "Mở cửa";
+      else if (it.type === "vehicle") prompt = `Lái ${it.target.def.name}`;
       else if (it.type === "crate")
         prompt =
           it.target.kind === "airdrop"
@@ -272,7 +275,7 @@ export class HUD {
         prompt = `Nhặt ${d.name}${it.target.n > 1 ? ` (${it.target.n})` : ""}`;
       }
     }
-    if (m.vehiclePrompt) prompt = m.vehiclePrompt;
+    if (p.mode === "vehicle") prompt = "Xuống xe";
     if (p.mode === "plane" && m.canJump) prompt = "Nhảy dù";
     if (p.mode === "freefall") prompt = "Mở dù";
     this.set("prompt", prompt, (v) => {
@@ -361,8 +364,8 @@ export class HUD {
     const ammoRes = def && def.ammo ? inv.count(def.ammo) : 0;
     const wKey = w ? `${w.id}:${w.mag}:${ammoRes}:${w.mode}` : "";
     this.set("weapon", wKey, () => {
-      this.weaponsBox.classList.toggle("on", !!w && def.cls !== "MELEE");
-      if (!w) return;
+      this.weaponsBox.classList.toggle("on", !!def && def.cls !== "MELEE");
+      if (!def) return;
       this.wname.textContent = def.name;
       this.ammo.querySelector(".mag").textContent = w.mag;
       this.ammo.querySelector(".mag").classList.toggle("low", w.mag <= Math.ceil(magSize(w) * 0.2));
@@ -394,6 +397,17 @@ export class HUD {
     if (showAct) {
       this.action.querySelector(".fill").style.width = `${Math.min(100, (a.t / a.dur) * 100)}%`;
       this.action.querySelector(".lbl").dataset.t = Math.max(0, a.dur - a.t).toFixed(1);
+    }
+    // vehicle speed + health
+    const v = p.vehicle;
+    this.set("veh", !!v, (on) => this.vehicle.classList.toggle("on", on));
+    if (v) {
+      this.set("vspd", Math.round(Math.hypot(v.vel.x, v.vel.z) * 3.6), (x) => (this.vehicle.querySelector("b").textContent = x));
+      this.set("vhp", Math.round((v.health / v.def.health) * 100), (x) => {
+        const i = this.vehicle.querySelector("i");
+        i.style.width = `${Math.max(0, x)}%`;
+        i.style.background = x < 30 ? "#ff4a3a" : x < 60 ? "#ffb12a" : "#fff";
+      });
     }
     // hide most HUD when the player is dead or spectating
     this.set("mode", `${p.alive}:${p.mode}`, () => this.root.classList.toggle("dead", !p.alive));

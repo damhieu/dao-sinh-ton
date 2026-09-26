@@ -484,6 +484,7 @@ export class BotController {
         if (d < 260 && this.aggr > 0.35) scores.push(["airdrop", 55 + this.aggr * 20 - d * 0.05]);
       }
     }
+    if (this.goal === "grenade" && this.grenadeT < 2.5) scores.push(["grenade", 200]);
     scores.push(["roam", 20]);
     scores.sort((a, c) => c[1] - a[1]);
     const g = scores[0][0];
@@ -586,10 +587,13 @@ export class BotController {
       case "airdrop":
         wantsMove = this.doAirdrop(dt);
         break;
+      case "grenade":
+        wantsMove = this.doGrenade(dt);
+        break;
       default:
         wantsMove = this.doRoam(dt);
     }
-    if (this.goal !== "engage" && this.goal !== "cover") this.faceMove(dt);
+    if (this.goal !== "engage" && this.goal !== "cover" && this.goal !== "grenade") this.faceMove(dt);
     // convert the world move direction to local controls
     const yaw = c.yaw;
     const fx = -Math.sin(yaw);
@@ -602,7 +606,7 @@ export class BotController {
     this.checkStuck(dt, wantsMove);
     // keep a loaded weapon when idle
     const w = ch.loadout.current();
-    if (!this.enemy && w && WEAPONS[w.id].ammo && w.mag < magSize(w) * 0.5 && !ch.action) c.reload = true;
+    if (!this.enemy && w && WEAPONS[w.id] && WEAPONS[w.id].ammo && w.mag < magSize(w) * 0.5 && !ch.action) c.reload = true;
     if (!w && !ch.action) {
       const s = this.bestSlot(60);
       if (s >= 0) c.select = s;
@@ -684,6 +688,15 @@ export class BotController {
       this.wantStance = want;
     }
     this.applyStance(this.wantStance || "stand");
+    if (!e.visible && ch.inv.count("frag") > 0 && this.m.time - (this.lastThrow ?? -99) > 14 && this.skill > 0.3) {
+      const gd = Math.hypot(e.x - b.x, e.z - b.z);
+      if (gd > 10 && gd < 32) {
+        this.goal = "grenade";
+        this.grenadeTarget = { x: e.x, y: e.y, z: e.z };
+        this.grenadeT = 0;
+        return true;
+      }
+    }
     if (!e.visible) {
       // push to last known position carefully
       this.moveTo(e.x, e.y, e.z, dt, false);
@@ -871,6 +884,55 @@ export class BotController {
     const d = this.moveTo(e.x, e.y, e.z, dt, false);
     if (d < 4) e.aware *= 0.5;
     return true;
+  }
+
+  doGrenade(dt) {
+    const ch = this.ch;
+    const c = ch.ctrl;
+    const b = ch.body;
+    const t = this.grenadeTarget;
+    this.grenadeT += dt;
+    if (!t || this.grenadeT > 2.5 || ch.inv.count("frag") <= 0) {
+      this.lastThrow = this.m.time;
+      this.goal = "engage";
+      this.thinkT = 0;
+      return false;
+    }
+    if (ch.loadout.active !== 4) {
+      if (!ch.action) c.select = 4;
+      return false;
+    }
+    // aim: yaw toward the target, pitch from the low ballistic arc (launch speed ~19 m/s)
+    const dx = t.x - b.x;
+    const dz = t.z - b.z;
+    const d = Math.hypot(dx, dz);
+    const dy = t.y - (b.y + ch.eyeHeight());
+    const v = 19;
+    const g = 9.81;
+    const disc = v ** 4 - g * (g * d * d + 2 * dy * v * v);
+    const theta = disc > 0 ? Math.atan((v * v - Math.sqrt(disc)) / (g * d)) : Math.PI / 4;
+    this.aimYaw = approach(this.aimYaw, Math.atan2(-dx, -dz), 6 * dt);
+    this.aimPitch += (theta - 0.12 - this.aimPitch) * Math.min(1, dt * 8);
+    c.yaw = this.aimYaw;
+    c.pitch = this.aimPitch;
+    ch.aimOrigin.x = b.x;
+    ch.aimOrigin.y = b.y + ch.eyeHeight();
+    ch.aimOrigin.z = b.z;
+    const cp = Math.cos(this.aimPitch);
+    ch.aimDir.x = -Math.sin(this.aimYaw) * cp;
+    ch.aimDir.y = Math.sin(this.aimPitch);
+    ch.aimDir.z = -Math.cos(this.aimYaw) * cp;
+    // hold, then release to throw
+    if (this.grenadeT < 1.1) c.fire = true;
+    else {
+      c.fire = false;
+      if (!ch.grenadeHold) {
+        this.lastThrow = this.m.time;
+        this.goal = "engage";
+        this.thinkT = 0;
+      }
+    }
+    return false;
   }
 
   doAirdrop(dt) {

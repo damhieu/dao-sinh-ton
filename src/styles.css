@@ -896,3 +896,34 @@ button.ghost {
 .spectating.on {
   display: block;
 }
+
+.vehiclehud {
+  position: absolute;
+  left: 50%;
+  bottom: 70px;
+  transform: translateX(-50%);
+  display: none;
+  text-align: center;
+}
+.vehiclehud.on {
+  display: block;
+}
+.vehiclehud .spd {
+  font-size: 18px;
+  font-weight: 600;
+}
+.vehiclehud .spd b {
+  font-size: 34px;
+}
+.vehiclehud .vhp {
+  width: 180px;
+  height: 5px;
+  margin: 4px auto 0;
+  background: rgba(255, 255, 255, 0.2);
+}
+.vehiclehud .vhp i {
+  display: block;
+  height: 100%;
+  width: 100%;
+  background: #fff;
+}

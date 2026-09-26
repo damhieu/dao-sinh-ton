@@ -135,6 +135,11 @@ export class WeaponSystem {
     if (c.use) this.startUse(ch, c.use);
     this.updateAction(ch, dt);
     if (ch.mode !== "ground") return;
+    if (lo.active === SLOT_THROW) {
+      // grenades are handled by the grenade system
+      ch.ads = false;
+      return;
+    }
     const w = lo.current();
     if (!w) {
       ch.ads = false;
