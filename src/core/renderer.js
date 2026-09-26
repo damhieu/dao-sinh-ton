@@ -65,7 +65,7 @@ export function createRenderer(canvas, settings) {
   renderer.autoClear = false;
 
   const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(settings.fov, innerWidth / innerHeight, 0.1, 4000);
+  const camera = new THREE.PerspectiveCamera(settings.fov, innerWidth / innerHeight, 0.1, 15000);
   camera.rotation.order = "YXZ";
 
   // Viewmodel (first-person weapon) is rendered after the scene with a cleared depth buffer.

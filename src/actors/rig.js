@@ -629,6 +629,15 @@ export class RigRenderer {
     }
   }
 
+  reset() {
+    this.chars = [];
+    for (const m of Object.values(this.meshes)) {
+      for (let i = 0; i < m.count; i++) m.setMatrixAt(i, ZERO);
+      m.count = 0;
+      m.instanceMatrix.needsUpdate = true;
+    }
+  }
+
   // Make sure hitboxes are current (for bullets hitting characters that weren't posed this frame)
   ensurePose(ch) {
     if (ch.poseFrame !== this.frame) this.pose(ch, false);

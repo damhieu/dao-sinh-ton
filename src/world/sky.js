@@ -143,7 +143,11 @@ const SkyShader = {
       vec3 d = normalize(vDir);
       vec2 uv = vec2(atan(d.z, d.x) * RECIPROCAL_PI2 + 0.5, asin(clamp(d.y, -1.0, 1.0)) * RECIPROCAL_PI + 0.5);
       vec3 c = texture2D(tSky, uv).rgb;
-      c = mix(uHorizon, c, smoothstep(-0.004, 0.035, d.y));
+      // below the horizon: repeat the haze just above it (same azimuth) so the far sea edge blends in
+      vec3 haze = vec3(0.0);
+      for (int k = -3; k <= 3; k++) haze += texture2D(tSky, vec2(uv.x + float(k) * 0.012, 0.5 + 0.03)).rgb;
+      haze /= 7.0;
+      c = mix(haze, c, smoothstep(-0.002, 0.02, d.y));
       gl_FragColor = vec4(inverseAces(c), 1.0);
     }
   `,

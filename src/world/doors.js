@@ -132,6 +132,16 @@ export class Doors {
     this.collision.setBox(d.colliderId, x0, d.y, z0, x1, d.y + d.h, z1);
   }
 
+  reset() {
+    for (const d of this.list) {
+      d.target = d.open ? 1 : 0;
+      d.t = d.target;
+      this.writeMatrix(d);
+      this.updateCollider(d);
+    }
+    for (const m of Object.values(this.meshes)) m.instanceMatrix.needsUpdate = true;
+  }
+
   // nearest door within maxDist of (x, y, z); returns index or -1
   nearest(x, y, z, maxDist = 1.8) {
     let best = -1;

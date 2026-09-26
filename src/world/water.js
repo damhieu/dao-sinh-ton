@@ -92,7 +92,7 @@ export function createWater(data, noiseTex, heightTex, ctx) {
   };
   mat.customProgramCacheKey = () => "water-v1";
 
-  const geo = new THREE.PlaneGeometry(16000, 16000, 1, 1);
+  const geo = new THREE.PlaneGeometry(40000, 40000, 1, 1);
   geo.rotateX(-Math.PI / 2);
   const mesh = new THREE.Mesh(geo, mat);
   mesh.renderOrder = 1;

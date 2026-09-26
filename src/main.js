@@ -3,7 +3,9 @@ import { createRenderer } from "./core/renderer.js";
 import { loadAssets } from "./core/assets.js";
 import { loadSettings } from "./core/settings.js";
 import { Input } from "./core/input.js";
+import { events } from "./core/events.js";
 import { createWorld } from "./world/world.js";
+import { renderMapImage } from "./world/mapimage.js";
 import { RigRenderer, MAX_CHARS } from "./actors/rig.js";
 import { HeldWeapons } from "./items/heldweapons.js";
 import { Pickups } from "./items/pickups.js";
@@ -11,12 +13,15 @@ import { renderIcons } from "./items/icons.js";
 import { FX } from "./fx/fx.js";
 import { HUD } from "./ui/hud.js";
 import { InventoryUI } from "./ui/inventoryui.js";
-import { events } from "./core/events.js";
+import { Maps } from "./ui/maps.js";
+import { ResultScreen } from "./ui/result.js";
 import { Match } from "./match/match.js";
 import { ITEMS, WEAPONS } from "./items/itemdefs.js";
 import { magSize } from "./items/loadout.js";
+import { PLAYER_COUNT } from "./config.js";
 import { installDebugApi } from "./debug/debugapi.js";
 
+const params = new URLSearchParams(location.search);
 const canvas = document.getElementById("game");
 const uiRoot = document.getElementById("ui");
 const settings = loadSettings();
@@ -29,22 +34,11 @@ status.style.cssText =
   "position:fixed;left:16px;bottom:16px;font:600 14px var(--font-hud);letter-spacing:.06em;color:#fff;text-shadow:0 1px 3px #000";
 uiRoot.appendChild(status);
 
-const app = {
-  ctx,
-  settings,
-  input,
-  world: null,
-  rig: null,
-  held: null,
-  pickups: null,
-  fx: null,
-  icons: null,
-  hud: null,
-  match: null,
-};
+const app = { ctx, settings, input, world: null, match: null, timeScale: 1 };
 const fly = { on: false, pos: new THREE.Vector3(0, 320, 900), yaw: 0, pitch: -0.35 };
 let fps = 60;
 let simTime = 0;
+let deathTimer = -1;
 const _v = new THREE.Vector3();
 
 async function boot() {
@@ -57,29 +51,74 @@ async function boot() {
   app.fx = new FX(ctx.scene);
   app.icons = renderIcons(ctx.renderer);
   app.hud = new HUD(uiRoot, app.icons);
+  app.maps = new Maps(uiRoot, renderMapImage(app.world), app.world);
   app.inventory = new InventoryUI(uiRoot, app.icons);
+  app.spectateLabel = document.createElement("div");
+  app.spectateLabel.className = "spectating";
+  uiRoot.appendChild(app.spectateLabel);
+  app.result = new ResultScreen(uiRoot, {
+    restart: () => startMatch(),
+    lobby: () => startMatch(),
+    spectate: () => {
+      app.result.hide();
+      input.lock();
+    },
+  });
   events.on("openCrate", (e) => e.ch.isPlayer && openInventory(e.crate));
-  startSandbox();
+  events.on("kill", (e) => {
+    if (e.victim === app.match?.player) deathTimer = 2.5;
+  });
+  events.on("matchEnd", (e) => {
+    const m = app.match;
+    if (e.winner === m.player) setTimeout(() => showResult(true), 1500);
+  });
+  if (params.has("sandbox")) startSandbox();
+  else startMatch();
   status.textContent = "";
   let last = performance.now();
   const frame = (now) => {
     const dt = Math.min(0.05, (now - last) / 1000);
     last = now;
     fps = fps * 0.95 + (1 / Math.max(dt, 1e-4)) * 0.05;
-    tick(dt);
+    tick(dt * app.timeScale);
     requestAnimationFrame(frame);
   };
   requestAnimationFrame(frame);
 }
 
+function resetWorldState() {
+  if (app.match) app.match.dispose();
+  app.rig.reset();
+  app.held.reset();
+  app.pickups.clear();
+  app.world.doors.reset();
+  app.fx.clear();
+  app.result.hide();
+  app.inventory.toggle(null, false);
+  app.maps.toggle(false);
+  app.maps.marker = null;
+  deathTimer = -1;
+}
+
+function startMatch() {
+  resetWorldState();
+  const m = new Match({ ...app, seed: params.has("seed") ? +params.get("seed") : undefined });
+  app.match = m;
+  m.createPlayer(settings.name);
+  m.spawnLoot();
+  const speed = settings.matchSpeed === "fast" ? 0.6 : 1;
+  m.startMatch({ bots: +(params.get("bots") ?? PLAYER_COUNT - 1), speed });
+}
+
 function startSandbox() {
+  resetWorldState();
   const m = new Match(app);
   app.match = m;
+  m.state = "sandbox";
   const p = m.createPlayer(settings.name);
   const town = app.world.data.towns.find((t) => t.id === "oldtown");
   p.setPosition(town.x + 3, app.world.hm.getHeight(town.x + 3, town.z) + 0.5, town.z);
   m.spawnLoot();
-  // bots scattered around the town, starting unarmed (they must loot)
   const bots = m.createBots(12);
   const rng = m.rng.fork(5);
   bots.forEach((b, i) => {
@@ -90,15 +129,32 @@ function startSandbox() {
   });
 }
 
+function showResult(win) {
+  const m = app.match;
+  const p = m.player;
+  input.unlock();
+  app.result.show({
+    win,
+    rank: win ? 1 : p.rank,
+    total: m.characters.length,
+    stats: p.stats,
+    killer: p.killer ? p.killer.name : null,
+    name: p.name,
+    canSpectate: !win && m.characters.some((c) => c.alive),
+  });
+}
+
 function openInventory(crate = null) {
+  if (!app.match.player.alive) return;
   if (crate) app.inventory.openCrate(app.match, crate);
   else app.inventory.toggle(app.match, true);
   input.unlock();
   app.match.controller.uiOpen = true;
 }
 
-function closeInventory() {
+function closeOverlays() {
   app.inventory.toggle(app.match, false);
+  app.maps.toggle(false);
   app.match.controller.uiOpen = false;
   input.lock();
 }
@@ -106,18 +162,52 @@ function closeInventory() {
 function tick(dt, render = true) {
   simTime += dt;
   const m = app.match;
-  if (input.pressed("Tab")) app.inventory.open ? closeInventory() : openInventory();
-  if (app.inventory.open && input.pressed("Escape")) closeInventory();
-  if (input.pressed("KeyP")) fly.on = !fly.on;
+  const p = m.player;
+  // UI toggles
+  if (input.pressed("Tab")) app.inventory.open ? closeOverlays() : openInventory();
+  if (input.pressed("KeyM")) {
+    if (app.maps.open) closeOverlays();
+    else {
+      app.maps.toggle(true);
+      input.unlock();
+      m.controller.uiOpen = true;
+    }
+  }
+  if (input.pressed("Escape") && (app.inventory.open || app.maps.open)) closeOverlays();
+  if (input.pressed("KeyP") && params.has("debug")) fly.on = !fly.on;
   if (input.pressed("KeyV")) m.gcam.mode = m.gcam.mode === "tpp" ? "fpp" : "tpp";
+  if (!p.alive && !app.result.visible && input.btnPressed(1)) m.cycleSpectate();
   if (fly.on) updateFly(dt);
   else m.update(dt);
+  if (deathTimer > 0 && (deathTimer -= dt) <= 0) showResult(false);
+  const spec = !p.alive && !app.result.visible && m.spectating;
+  app.spectateLabel.classList.toggle("on", !!spec);
+  if (spec) app.spectateLabel.textContent = `ĐANG THEO DÕI: ${m.spectating.name} · Click để đổi người`;
   app.fx.update(dt, ctx.camera);
   app.hud.update(dt, m);
   app.inventory.update(m);
-  app.world.update(dt, simTime, fly.on ? ctx.camera.position : m.player.body, ctx.camera.position);
+  app.maps.update(dt, m);
+  updateScreenFx(dt, m);
+  app.world.update(dt, simTime, ctx.camera.position, ctx.camera.position);
+  ctx.updateDynamicRes(dt);
   if (render) ctx.render(simTime);
   input.endFrame();
+}
+
+// Low health, damage flash, being outside the zone
+let dmgFlash = 0;
+events.on("damage", (e) => {
+  if (e.target.isPlayer && e.kind !== "zone") dmgFlash = Math.min(1, dmgFlash + e.amount / 35);
+});
+function updateScreenFx(dt, m) {
+  const u = ctx.screenFx.uniforms;
+  const p = m.player;
+  dmgFlash = Math.max(0, dmgFlash - dt * 2.2);
+  u.uDamage.value = dmgFlash;
+  u.uLowHealth.value = p.alive ? Math.max(0, (30 - p.health) / 30) : 0;
+  const outside =
+    p.alive && m.zone && m.zone.state !== "idle" && p.mode !== "plane" && m.zone.outside(p.body.x, p.body.z);
+  u.uZone.value += ((outside ? 1 : 0) - u.uZone.value) * Math.min(1, dt * 4);
 }
 
 function updateFly(dt) {
@@ -139,7 +229,9 @@ function updateFly(dt) {
   app.rig.update(dt, ctx.camera);
 }
 
-canvas.addEventListener("click", () => input.lock());
+canvas.addEventListener("click", () => {
+  if (!app.result.visible && !app.inventory.open && !app.maps.open) input.lock();
+});
 
 installDebugApi({
   app,
@@ -159,6 +251,8 @@ installDebugApi({
   get ready() {
     return !!app.match;
   },
+  startMatch,
+  startSandbox,
   fly(x, y, z, yaw = fly.yaw, pitch = fly.pitch) {
     fly.on = true;
     fly.pos.set(x, y, z);
@@ -175,6 +269,10 @@ installDebugApi({
   },
   teleport(x, z, y) {
     const p = app.match.player;
+    if (p.mode !== "ground") {
+      p.mode = "ground";
+      p.chuteOpen = 0;
+    }
     p.setPosition(x, y ?? app.world.hm.getHeight(x, z) + 0.5, z);
     p.body.vy = 0;
     fly.on = false;
@@ -193,7 +291,6 @@ installDebugApi({
     input.dx += dx;
     input.dy += dy;
   },
-  // give items to the player (weapons come loaded)
   give(id, n = 1) {
     const m = app.match;
     const p = m.player;
@@ -205,6 +302,9 @@ installDebugApi({
       if (ammo) p.inv.add(ammo, ITEMS[ammo].stack * 4);
     }
     return r;
+  },
+  timescale(s) {
+    app.timeScale = s;
   },
   stats() {
     return { fps: Math.round(fps), ...ctx.frameStats, pixelRatio: ctx.renderer.getPixelRatio() };

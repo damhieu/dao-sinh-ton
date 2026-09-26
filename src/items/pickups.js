@@ -96,6 +96,11 @@ export class Pickups {
     this.list.delete(p);
   }
 
+  clear() {
+    for (const p of [...this.list]) this.remove(p);
+    this.grid.clear();
+  }
+
   // Items within r meters (and roughly the same floor), nearest first
   near(x, y, z, r, out = []) {
     out.length = 0;

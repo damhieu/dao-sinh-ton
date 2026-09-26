@@ -3,6 +3,7 @@
 import { WEAPONS, ITEMS, ATTACHMENTS } from "../items/itemdefs.js";
 import { magSize } from "../items/loadout.js";
 import { events } from "../core/events.js";
+import { fmt } from "./maps.js";
 
 const el = (tag, cls, parent, html) => {
   const e = document.createElement(tag);
@@ -107,6 +108,10 @@ export class HUD {
     });
     events.on("damage", (e) => {
       if (e.target.isPlayer && (e.dirX || e.dirZ)) this.dirs.push({ x: e.dirX, z: e.dirZ, t: 1.2 });
+    });
+    events.on("zone", (e) => {
+      if (e.state === "waiting" && e.phase === 0) this.showNotice("VÙNG AN TOÀN ĐÃ XUẤT HIỆN", "HÃY DI CHUYỂN VÀO VÒNG TRẮNG");
+      else if (e.state === "shrinking") this.showNotice("BO ĐANG THU HẸP!", `GIAI ĐOẠN ${e.phase + 1}`);
     });
     events.on("pickupFail", (e) => {
       if (e.ch.isPlayer)
@@ -282,6 +287,21 @@ export class HUD {
       if (f.t <= 0) f.item.classList.add("out");
     }
     this.feed = this.feed.filter((f) => f.t > -1);
+    // zone timer
+    const z = m.zone;
+    let zt = "";
+    if (z && p.mode !== "plane") {
+      if (z.state === "idle") zt = `Bo xuất hiện sau <b>${fmt(z.timeLeft)}</b>`;
+      else if (z.state === "waiting") zt = `Bo thu hẹp sau <b>${fmt(z.timeLeft)}</b>`;
+      else if (z.state === "shrinking") zt = `Bo đang thu hẹp <b>${fmt(z.timeLeft)}</b>`;
+      else zt = "Bo cuối";
+      if (z.state !== "idle" && p.alive) {
+        const d = Math.hypot(p.body.x - z.next.x, p.body.z - z.next.z) - z.next.r;
+        if (d > 0) zt += `<small>Cách vùng an toàn ${Math.round(d)} m</small>`;
+        if (z.outside(p.body.x, p.body.z)) zt += `<small class="warn">BẠN ĐANG Ở NGOÀI BO</small>`;
+      }
+    }
+    this.set("zone", zt, (v) => (this.zoneInfo.innerHTML = v));
     // counters
     this.set("alive", m.aliveCount, (v) => (this.aliveBox.firstChild.textContent = v));
     this.set("kills", p.stats.kills, (v) => (this.killBox.firstChild.textContent = v));

@@ -36,6 +36,11 @@ export class HeldWeapons {
     return s;
   }
 
+  reset() {
+    for (const s of this.slots.values()) for (const i of [...s.hand, ...s.back]) this.batch.deleteInstance(i);
+    this.slots.clear();
+  }
+
   // write the weapon + attachments at `base` (world matrix of the weapon origin)
   writeSet(ids, w, base) {
     if (!w) {

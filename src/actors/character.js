@@ -312,7 +312,8 @@ export class Character {
     b.z += b.vz * dt;
     const ground = world.collision.groundAt(b.x, b.z, 0.5, b.y + 50);
     const agl = b.y - Math.max(ground, WORLD.SEA);
-    if (c.deploy || agl < 150) this.openChute();
+    this.freefallT = (this.freefallT || 0) + dt;
+    if ((c.deploy && this.freefallT > 1) || agl < 150) this.openChute();
     if (agl <= 0.5) this.land(world);
   }
 

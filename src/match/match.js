@@ -17,6 +17,9 @@ import { MAT } from "../world/collision.js";
 import { BotController } from "../actors/bot.js";
 import { BuildingIndex } from "../actors/navigation.js";
 import { makeNames } from "../actors/names.js";
+import { Plane } from "./plane.js";
+import { ZoneSchedule } from "./zone.js";
+import { ZoneWall } from "./zonewall.js";
 
 const _v = new THREE.Vector3();
 const _o = { x: 0, y: 0, z: 0 };
@@ -513,23 +516,167 @@ export class Match {
 
   // ------------------------------------------------------------------ frame
 
+  // ------------------------------------------------------------------ match flow
+
+  // Full battle royale: everyone boards the plane; zone + drops follow.
+  startMatch({ bots = 49, speed = 1 } = {}) {
+    const rng = this.rng;
+    this.speed = speed;
+    this.plane = new Plane(this.ctx.scene, rng.fork(11));
+    this.zone = new ZoneSchedule(rng.fork(12), {
+      center: { x: 0, z: 0 },
+      r0: 1350,
+      isLand: (x, z) => this.world.isLand(x, z) && this.world.hm.getHeight(x, z) < 70,
+      startDelay: 60,
+      speed,
+    });
+    this.zoneWall = new ZoneWall(this.ctx.scene);
+    this.createBots(bots);
+    const towns = this.world.data.towns;
+    const weight = { military: 3, port: 2.4, oldtown: 3, school: 1.6, factory: 1.8, radar: 1.2, fishing: 1, farm: 1 };
+    const brng = rng.fork(13);
+    for (const b of this.bots) {
+      // pick a town (or occasionally a random building) to drop on
+      let tx;
+      let tz;
+      if (brng.chance(0.82)) {
+        const t = brng.weighted(towns.map((t) => [t, weight[t.kind] ?? 1]));
+        const a = brng.range(0, Math.PI * 2);
+        const r = Math.sqrt(brng.next()) * t.radius * 0.8;
+        tx = t.x + Math.cos(a) * r;
+        tz = t.z + Math.sin(a) * r;
+      } else {
+        const bl = brng.pick(this.world.buildings);
+        tx = bl.plot.x;
+        tz = bl.plot.z;
+      }
+      b.dropTarget = { x: tx, z: tz };
+      b.jumpDist = brng.range(330, 520);
+    }
+    for (const ch of this.characters) {
+      ch.mode = "plane";
+      ch.setPosition(this.plane.pos.x, this.plane.pos.y, this.plane.pos.z);
+      ch.onLand = () => this.onLand(ch);
+      ch.onChuteOpen = () => events.emit("chute", { ch });
+    }
+    this.state = "plane";
+    this.controller.setView(Math.atan2(-this.plane.dir.x, -this.plane.dir.z), -0.25);
+    events.emit("matchStart", { match: this });
+  }
+
+  get canJump() {
+    return this.player.mode === "plane" && this.plane && this.plane.progress > 0.12;
+  }
+
+  jump(ch) {
+    if (ch.mode !== "plane" || !this.plane) return false;
+    const pl = this.plane;
+    const b = ch.body;
+    const side = (Math.random() - 0.5) * 6;
+    b.x = pl.pos.x - pl.dir.x * 14 + -pl.dir.z * side;
+    b.y = pl.pos.y - 3;
+    b.z = pl.pos.z - pl.dir.z * 14 + pl.dir.x * side;
+    b.vx = pl.dir.x * 22;
+    b.vz = pl.dir.z * 22;
+    b.vy = 0;
+    ch.mode = "freefall";
+    ch.freefallT = 0;
+    ch.ctrl.deploy = false;
+    ch.yaw = Math.atan2(-pl.dir.x, -pl.dir.z);
+    ch.ctrl.yaw = ch.yaw;
+    if (ch.bot) ch.bot.aimYaw = ch.yaw;
+    events.emit("jump", { ch });
+    return true;
+  }
+
+  onLand(ch) {
+    events.emit("land", { ch });
+    if (ch.bot) {
+      ch.bot.lootUntil = this.time + ch.bot.rng.range(70, 150) / (this.speed < 1 ? 1.4 : 1);
+      ch.bot.aimYaw = ch.yaw;
+    }
+  }
+
+  updateZone(dt) {
+    const z = this.zone;
+    if (!z) return;
+    const prevPhase = z.phase;
+    const prevState = z.state;
+    z.update(this.time);
+    if (z.state !== prevState || z.phase !== prevPhase) events.emit("zone", { zone: z, state: z.state, phase: z.phase });
+    this.zoneWall.update(this.time, z);
+    if (z.state === "idle") return;
+    this.zoneTick = (this.zoneTick || 0) + dt;
+    if (this.zoneTick < 0.5) return;
+    const tick = this.zoneTick;
+    this.zoneTick = 0;
+    for (const ch of this.characters) {
+      if (!ch.alive || ch.mode === "plane") continue;
+      if (z.outside(ch.body.x, ch.body.z)) this.damage(ch, z.dps * tick, { kind: "zone" });
+    }
+  }
+
+  checkEnd() {
+    if (this.state === "ended") return;
+    const alive = this.characters.filter((c) => c.alive);
+    this.aliveCount = alive.length;
+    if (alive.length <= 1 && this.state !== "sandbox") {
+      this.state = "ended";
+      this.winner = alive[0] || null;
+      if (this.winner) this.winner.rank = 1;
+      events.emit("matchEnd", { winner: this.winner, playerRank: this.player.alive ? 1 : this.player.rank });
+    }
+  }
+
+  // camera target while dead: the killer, else any living character
+  spectateTarget() {
+    const p = this.player;
+    if (this.spectating && this.spectating.alive) return this.spectating;
+    const k = p.killer && p.killer.alive ? p.killer : this.characters.find((c) => c.alive && c !== p);
+    this.spectating = k || null;
+    return this.spectating;
+  }
+
+  cycleSpectate() {
+    const alive = this.characters.filter((c) => c.alive && c !== this.player);
+    if (!alive.length) return;
+    const i = alive.indexOf(this.spectating);
+    this.spectating = alive[(i + 1) % alive.length];
+  }
+
   update(dt) {
     this.time += dt;
     const p = this.player;
     const c = this.controller;
+    // plane
+    if (this.plane) {
+      this.plane.update(dt);
+      const pl = this.plane.pos;
+      for (const ch of this.characters) if (ch.mode === "plane") ch.setPosition(pl.x, pl.y, pl.z);
+      if (this.plane.progress > 0.975) for (const ch of this.characters) if (ch.mode === "plane") this.jump(ch);
+      if (this.plane.done) {
+        this.plane.remove(this.ctx.scene);
+        this.plane = null;
+        if (this.state === "plane") this.state = "playing";
+      }
+    }
     // player input
     c.update(dt);
-    if (p.alive && p.mode === "ground" && p.ctrl.interact) this.interact(p);
-    if (p.mode === "ground") this.updatePlayerAim();
+    if (p.alive) {
+      if (p.mode === "plane" && p.ctrl.interact && this.canJump) this.jump(p);
+      else if (p.mode === "ground" && p.ctrl.interact) this.interact(p);
+      if (p.mode === "ground") this.updatePlayerAim();
+      else {
+        p.ctrl.pitch = c.viewPitch;
+      }
+    }
     this.updateVisibility(dt);
     for (const b of this.bots) b.update(dt);
     // weapons + movement for everyone
     for (const ch of this.characters) {
       if (ch.swingT > 0) ch.swingT = ch.swingT > 0.5 ? 0 : ch.swingT + dt;
       this.weapons.update(ch, dt);
-      if (ch !== p && ch.dummy) {
-        ch.ctrl.mx = ch.ctrl.mz = 0;
-      }
+      if (ch.dummy) ch.ctrl.mx = ch.ctrl.mz = 0;
       ch.update(dt, this.world);
     }
     // recoil into the player's view
@@ -540,15 +687,41 @@ export class Match {
       this.gcam.kickPitch += rp * 0.35;
     }
     this.ballistics.update(dt);
-    // camera & rendering state
+    this.updateZone(dt);
+    if (this.vehicles) this.vehicles.update(dt);
+    if (this.grenades) this.grenades.update(dt);
+    if (this.airdropSystem) this.airdropSystem.update(dt);
+    this.checkEnd();
+    // camera
     this.gcam.zoom = this.currentZoom();
-    this.gcam.update(dt, p, { ads: p.ads });
-    p.anim.hidden = this.gcam.mode3 === "fpp";
+    let camChar = p;
+    let opts = { ads: p.ads };
+    if (!p.alive) {
+      const t = this.spectateTarget();
+      if (t) camChar = t;
+      opts = { orbit: true, orbitDist: 4.5, orbitUp: 0.6 };
+    } else if (p.mode === "plane") opts = { orbit: true, orbitDist: 42, orbitUp: 8, eyeHeight: 1 };
+    else if (p.mode === "freefall") opts = { orbit: true, orbitDist: 6.5, orbitUp: 1.2, eyeHeight: 0.9 };
+    else if (p.mode === "chute") opts = { orbit: true, orbitDist: 7.5, orbitUp: 1.5, eyeHeight: 1.2 };
+    else if (p.mode === "vehicle" && p.vehicle) opts = { orbit: true, orbitDist: 8.5, orbitUp: 1.8, eyeHeight: 1.6 };
+    this.gcam.update(dt, camChar, opts);
+    p.anim.hidden = p.alive && this.gcam.mode3 === "fpp";
     this.rig.update(dt, this.ctx.camera);
     this.held.update(this.characters, p.anim.hidden ? p : null);
     this.viewmodel.update(dt, p, this.gcam, this.input.dx, this.input.dy);
     this.pickups.update(dt, this.ctx.camera.position);
-    this.aliveCount = this.characters.filter((ch) => ch.alive).length;
+  }
+
+  dispose() {
+    if (this.plane) this.plane.remove(this.ctx.scene);
+    if (this.zoneWall) this.ctx.scene.remove(this.zoneWall.mesh);
+    if (this.vehicles) this.vehicles.dispose();
+    if (this.grenades) this.grenades.dispose();
+    if (this.airdropSystem) this.airdropSystem.dispose();
+    this.ctx.vmActive = false;
+    this.ctx.screenFx.uniforms.uZone.value = 0;
+    this.ctx.screenFx.uniforms.uDamage.value = 0;
+    this.ctx.screenFx.uniforms.uLowHealth.value = 0;
   }
 
   currentZoom() {

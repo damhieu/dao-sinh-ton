@@ -22,6 +22,14 @@ export class FX {
     this.lightT = 0.05;
   }
 
+  clear() {
+    this.particles.normal.p.length = 0;
+    this.particles.add.p.length = 0;
+    this.tracers.list.length = 0;
+    this.decals.mesh.count = 0;
+    this.decals.next = 0;
+  }
+
   update(dt, camera) {
     this.particles.update(dt);
     this.tracers.update(dt, camera);
