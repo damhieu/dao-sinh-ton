@@ -153,6 +153,7 @@ export class NavGrid {
 
   // Waypoints [{x, z}] from (x0, z0) toward (x1, z1), excluding the start. When the goal can't be
   // reached within the search budget the route ends at the explored cell closest to it.
+  // null: no free cell near the start or goal; []: the start is walled in (nothing reachable).
   findPath(x0, z0, x1, z1, maxExpand = 60000) {
     const n = this.n;
     const start = this.nearestFree(this.cellOf(x0, z0));

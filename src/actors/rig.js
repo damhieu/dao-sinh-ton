@@ -314,7 +314,6 @@ export class RigRenderer {
     const slot = this.chars.length;
     if (slot >= MAX_CHARS) throw new Error("Too many characters");
     this.chars.push(ch);
-    ch.rigSlot = slot;
     ch.hitboxes = new Float32Array(11 * 7);
     ch.poseFrame = -1;
     ch.anim = {

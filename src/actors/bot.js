@@ -276,12 +276,15 @@ export class BotController {
     const s = this.stuck;
     const b = this.ch.body;
     // long window: catches back-and-forth oscillation that the 1 s check below misses
+    if (s.lt === 0) {
+      // window start (also the first frame on the ground after landing)
+      s.lx = b.x;
+      s.lz = b.z;
+    }
     s.lt += dt;
     if (s.lt >= 6) {
       const net = Math.hypot(b.x - s.lx, b.z - s.lz);
       s.lt = 0;
-      s.lx = b.x;
-      s.lz = b.z;
       if (wantsMove && net < 3 && this.goal !== "engage" && this.goal !== "cover") {
         this.routeT = 0;
         this.nav.side = -(this.nav.side || 1);
