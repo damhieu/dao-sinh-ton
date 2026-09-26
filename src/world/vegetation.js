@@ -4,7 +4,7 @@ import { RNG } from "../core/rng.js";
 import { createNoise2D, fbm2 } from "../core/noise.js";
 import { F_ALL, F_BULLET, MAT } from "./collision.js";
 import { plotBounds } from "./layout.js";
-import { needleTexture, leafTexture, bushTexture } from "./foliage.js";
+import { needleTexture, needleBulkTexture, leafTexture, bushTexture } from "./foliage.js";
 
 // ---------------------------------------------------------------- geometry assembly
 
@@ -406,10 +406,14 @@ export function createVegetation(data, collision, assets, ctx, quality) {
   const bushMat = leafMat(bushTexture(), 0xb0c090);
   const bushMat2 = leafMat(leafTexture(256, 1), 0xb8c090);
   const farMat = new THREE.MeshStandardMaterial({ color: 0x2f4a22, roughness: 1, flatShading: false });
-  const pineInnerMat = new THREE.MeshStandardMaterial({ color: 0x1f3317, vertexColors: true, roughness: 1 });
-  const pineMidMat = new THREE.MeshStandardMaterial({ color: 0x3a5a2a, vertexColors: true, roughness: 1 });
-  windify(pineInnerMat, uniforms, 0.012);
-  windify(pineMidMat, uniforms, 0.012);
+  // solid needle cones: inner core of near pines and the whole crown of mid-distance pines
+  const pineConeMat = new THREE.MeshStandardMaterial({
+    map: needleBulkTexture(),
+    color: 0xd0dcc0,
+    vertexColors: true,
+    roughness: 1,
+  });
+  windify(pineConeMat, uniforms, 0.012);
   const farBroadMat = new THREE.MeshStandardMaterial({ color: 0x3c5a26, roughness: 1 });
   const boulder = assets.tex.boulder;
   const rockMat = new THREE.MeshStandardMaterial({
@@ -460,8 +464,8 @@ export function createVegetation(data, collision, assets, ctx, quality) {
   const view = quality.view;
   addLayer(trees.pine, pineTrunk, barkMat, 0, true, 0, LOD_MID);
   addLayer(trees.pine, pineCrown(10, 7, 1), needleMat, 0, true, 0, LOD_NEAR);
-  addLayer(trees.pine, pineCones(4, 0.7, 0.6, 7), pineInnerMat, 0, false, 0, LOD_NEAR);
-  addLayer(trees.pine, pineCones(4, 1.0, 1.0, 8), pineMidMat, 1, false, LOD_NEAR, LOD_MID);
+  addLayer(trees.pine, pineCones(4, 0.49, 0.6, 7), pineConeMat, 0, false, 0, LOD_NEAR);
+  addLayer(trees.pine, pineCones(4, 1.0, 1.0, 8), pineConeMat, 1, false, LOD_NEAR, LOD_MID);
   addLayer(trees.pine, pineFar, farMat, 2, false, LOD_MID, view);
   addLayer(trees.pine, trunkFar, barkMat, 2, false, LOD_MID, view * 0.6);
   addLayer(trees.broad, broadTrunk, barkMat, 0, true, 0, LOD_MID);

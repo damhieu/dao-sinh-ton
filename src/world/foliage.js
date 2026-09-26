@@ -53,6 +53,30 @@ export function needleTexture(size = 256) {
   return finish(c);
 }
 
+// Opaque needle mass for the solid pine cores (dark base densely covered in short needles)
+export function needleBulkTexture(size = 256) {
+  const c = document.createElement("canvas");
+  c.width = c.height = size;
+  const g = c.getContext("2d");
+  const r = rng(7);
+  g.fillStyle = "rgb(34,58,26)";
+  g.fillRect(0, 0, size, size);
+  for (let i = 0; i < 2600; i++) {
+    const x = r() * size;
+    const y = r() * size;
+    const a = Math.PI * (0.5 + (r() - 0.5) * 0.9) + (r() < 0.5 ? 0.5 : -0.5);
+    const l = 6 + r() * 10;
+    const shade = 50 + r() * 90;
+    g.strokeStyle = `rgb(${(shade * 0.4) | 0},${(shade * 0.9 + 20) | 0},${(shade * 0.32) | 0})`;
+    g.lineWidth = 1.2 + r() * 0.8;
+    g.beginPath();
+    g.moveTo(x, y);
+    g.lineTo(x + Math.cos(a) * l, y + Math.sin(a) * l);
+    g.stroke();
+  }
+  return finish(c);
+}
+
 // Cluster of broad leaves (round silhouette)
 export function leafTexture(size = 256, hue = 0) {
   const c = document.createElement("canvas");

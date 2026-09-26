@@ -91,7 +91,8 @@ export class HeldWeapons {
         }
       }
       if (back && a.chestMatrix) {
-        _t.makeRotationFromEuler(_e.set(0.0, Math.PI / 2, 2.35));
+        // sideways against the back, then tilted diagonally (muzzle over the left shoulder)
+        _t.makeRotationFromEuler(_e.set(0.0, Math.PI / 2, -0.75, "ZYX"));
         _t.setPosition(0.02, 0.28, 0.2);
         _m.multiplyMatrices(a.chestMatrix, _t);
         this.writeSet(s.back, back, _m);
