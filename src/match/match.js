@@ -284,7 +284,7 @@ export class Match {
       const score = d - facing * 0.8 + (p.crate ? 0.2 : 0);
       if (score < bestScore) {
         bestScore = score;
-        best = { type: p.crate ? "crate" : "pickup", target: p, dist: d };
+        best = { type: p.crate ? "crate" : "pickup", target: p, dist: d, score };
       }
     }
     const veh = this.vehicles.nearest(ch);
@@ -296,7 +296,10 @@ export class Match {
     if (di >= 0) {
       const d = this.world.doors.list[di];
       const dd = Math.hypot(d.x - b.x, d.z - b.z);
-      if (!best || dd < best.dist - 0.3) best = { type: "door", target: di, dist: dd };
+      // same facing preference as items: the thing you look at wins over a door beside you
+      const facing = dd > 0.3 ? ((d.x - b.x) * fx + (d.z - b.z) * fz) / dd : 1;
+      if (!best || dd - facing * 0.8 < (best.score ?? best.dist) - 0.3)
+        best = { type: "door", target: di, dist: dd };
     }
     return best;
   }

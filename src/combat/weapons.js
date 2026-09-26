@@ -122,7 +122,8 @@ export class WeaponSystem {
     const c = ch.ctrl;
     const lo = ch.loadout;
     // selection
-    if (c.select >= 0) this.switchTo(ch, c.select === lo.active && c.select !== SLOT_THROW ? -1 : c.select);
+    // pressing the key of the weapon in hand keeps it out (X holsters)
+    if (c.select >= 0) this.switchTo(ch, c.select);
     else if (c.selectCycle) {
       const order = [0, 1, 2, 3].filter((s) => lo.slots[s]);
       if (order.length) {

@@ -135,7 +135,8 @@ function applySettings(name) {
 }
 
 function recordStats(win, rank) {
-  if (recorded || app.mode !== "match") return;
+  // autopilot (debug) matches are not the player's own
+  if (recorded || app.mode !== "match" || app.match.player.bot) return;
   recorded = true;
   const st = loadStats();
   st.matches++;
@@ -351,6 +352,8 @@ function tick(dt, render = true) {
         }
       }
       if (input.pressed("Escape") && (app.inventory.open || app.maps.open)) closeOverlays();
+      // Esc also opens the pause menu when the pointer is already free (e.g. while spectating)
+      else if (input.pressed("Escape") && !input.locked && !overlayOpen() && !app.result.visible) pause();
       if (input.pressed("KeyP") && params.has("debug")) fly.on = !fly.on;
       if (input.pressed("KeyV")) m.gcam.mode = m.gcam.mode === "tpp" ? "fpp" : "tpp";
       if (!p.alive && !app.result.visible && input.btnPressed(1)) m.cycleSpectate();
@@ -360,7 +363,7 @@ function tick(dt, render = true) {
     if (deathTimer > 0 && (deathTimer -= dt) <= 0) showResult(false);
     const spec = !p.alive && !app.result.visible && m.spectating;
     app.spectateLabel.classList.toggle("on", !!spec);
-    if (spec) app.spectateLabel.textContent = `ĐANG THEO DÕI: ${m.spectating.name} · Click để đổi người`;
+    if (spec) app.spectateLabel.textContent = `ĐANG THEO DÕI: ${m.spectating.name} · Click để đổi người · Esc: menu`;
     app.hud.update(dt, m);
     app.inventory.update(m);
     app.maps.update(dt, m);
