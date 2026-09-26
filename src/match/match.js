@@ -534,6 +534,18 @@ export class Match {
     p.ctrl.pitch = Math.atan2(ap.y - sy, Math.max(0.5, Math.hypot(ap.x - b.x, ap.z - b.z)));
   }
 
+  // Long outdoor route for bots via the coarse nav grid; a couple of searches per frame at most,
+  // null when this frame's budget is spent (the caller retries shortly).
+  navPath(from, to) {
+    if (this.navBudget <= 0) return null;
+    this.navBudget--;
+    const hm = this.world.hm;
+    const pts = this.world.navGrid.findPath(from.x, from.z, to.x, to.z);
+    if (!pts) return [];
+    for (const p of pts) p.y = hm.getHeight(p.x, p.z);
+    return pts;
+  }
+
   // nearest character hit along a ray (for crosshair aim point)
   rayCharacters(o, d, maxT, ignore) {
     let best = -1;
@@ -565,13 +577,22 @@ export class Match {
     this.airdropSystem = new AirdropSystem(this);
     this.createBots(bots);
     const towns = this.world.data.towns;
-    const weight = { military: 3, port: 2.4, oldtown: 3, school: 1.6, factory: 1.8, radar: 1.2, fishing: 1, farm: 1 };
+    const weight = {
+      military: 3,
+      port: 2.4,
+      oldtown: 3,
+      school: 1.6,
+      factory: 1.8,
+      radar: 1.2,
+      fishing: 1,
+      farm: 1,
+    };
     const brng = rng.fork(13);
     for (const b of this.bots) {
       // pick a town (or occasionally a random building) to drop on
       let tx;
       let tz;
-      if (brng.chance(0.82)) {
+      if (brng.chance(0.65)) {
         const t = brng.weighted(towns.map((t) => [t, weight[t.kind] ?? 1]));
         const a = brng.range(0, Math.PI * 2);
         const r = Math.sqrt(brng.next()) * t.radius * 0.8;
@@ -635,9 +656,11 @@ export class Match {
     const prevPhase = z.phase;
     const prevState = z.state;
     z.update(this.time);
-    if (z.state !== prevState || z.phase !== prevPhase) events.emit("zone", { zone: z, state: z.state, phase: z.phase });
+    if (z.state !== prevState || z.phase !== prevPhase)
+      events.emit("zone", { zone: z, state: z.state, phase: z.phase });
     this.zoneWall.update(this.time, z);
-    if (z.state === "idle") return;
+    // no zone damage once the match is decided (the winner must not die on the result screen)
+    if (z.state === "idle" || this.state === "ended") return;
     this.zoneTick = (this.zoneTick || 0) + dt;
     if (this.zoneTick < 0.5) return;
     const tick = this.zoneTick;
@@ -678,6 +701,7 @@ export class Match {
 
   update(dt) {
     this.time += dt;
+    this.navBudget = 2;
     const p = this.player;
     const c = this.controller;
     // plane
@@ -685,7 +709,8 @@ export class Match {
       this.plane.update(dt);
       const pl = this.plane.pos;
       for (const ch of this.characters) if (ch.mode === "plane") ch.setPosition(pl.x, pl.y, pl.z);
-      if (this.plane.progress > 0.975) for (const ch of this.characters) if (ch.mode === "plane") this.jump(ch);
+      if (this.plane.progress > 0.975)
+        for (const ch of this.characters) if (ch.mode === "plane") this.jump(ch);
       if (this.plane.done) {
         this.plane.remove(this.ctx.scene);
         this.plane = null;
@@ -742,7 +767,8 @@ export class Match {
     } else if (p.mode === "plane") opts = { orbit: true, orbitDist: 42, orbitUp: 8, eyeHeight: 1 };
     else if (p.mode === "freefall") opts = { orbit: true, orbitDist: 6.5, orbitUp: 1.2, eyeHeight: 0.9 };
     else if (p.mode === "chute") opts = { orbit: true, orbitDist: 7.5, orbitUp: 1.5, eyeHeight: 1.2 };
-    else if (p.mode === "vehicle" && p.vehicle) opts = { orbit: true, orbitDist: 8.5, orbitUp: 1.8, eyeHeight: 1.6 };
+    else if (p.mode === "vehicle" && p.vehicle)
+      opts = { orbit: true, orbitDist: 8.5, orbitUp: 1.8, eyeHeight: 1.6 };
     this.gcam.update(dt, camChar, opts);
     p.anim.hidden = p.alive && this.gcam.mode3 === "fpp";
     this.rig.update(dt, this.ctx.camera);

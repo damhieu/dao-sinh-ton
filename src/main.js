@@ -85,7 +85,7 @@ async function boot() {
   };
   events.on("openCrate", (e) => e.ch.isPlayer && openInventory(e.crate));
   events.on("kill", (e) => {
-    if (e.victim === app.match?.player) {
+    if (e.victim === app.match?.player && app.match.state !== "ended") {
       deathTimer = 2.5;
       recordStats(false, e.rank);
     }
@@ -194,7 +194,8 @@ function startLobby() {
 
 function nearTree(x, z, r) {
   const t = app.world.vegetation.trees;
-  for (const list of [t.pine, t.broad]) for (const tr of list) if (Math.abs(tr.x - x) < r && Math.abs(tr.z - z) < r) return true;
+  for (const list of [t.pine, t.broad])
+    for (const tr of list) if (Math.abs(tr.x - x) < r && Math.abs(tr.z - z) < r) return true;
   return false;
 }
 

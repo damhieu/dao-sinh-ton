@@ -9,6 +9,7 @@ import { createBuildings } from "./buildings.js";
 import { Doors } from "./doors.js";
 import { createVegetation } from "./vegetation.js";
 import { createGrass, createGrassDensity } from "./grass.js";
+import { NavGrid } from "./navgrid.js";
 
 // setTimeout (not rAF) so loading also progresses while the tab is hidden
 const nextFrame = () => new Promise((r) => setTimeout(r, 0));
@@ -37,6 +38,9 @@ export async function createWorld(ctx, assets, onProgress = () => {}) {
   const vegetation = createVegetation(data, collision, assets, ctx, ctx.preset);
   const grassDensity = createGrassDensity(data);
   let grass = createGrass(data, heightTex, terrain.noiseTex, grassDensity, ctx, ctx.preset);
+  onProgress(0.92, "Tính đường đi cho bot");
+  await nextFrame();
+  const navGrid = new NavGrid(data.hm, collision);
   onProgress(1, "Xong");
 
   return {
@@ -51,6 +55,7 @@ export async function createWorld(ctx, assets, onProgress = () => {}) {
     buildingTris: bld.tris,
     doors,
     vegetation,
+    navGrid,
     grassDensity,
     get grass() {
       return grass;

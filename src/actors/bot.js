@@ -42,7 +42,7 @@ export class BotController {
     this.burstPause = 0;
     this.strafeDir = rng.chance(0.5) ? 1 : -1;
     this.strafeT = 0;
-    this.stuck = { t: 0, x: 0, z: 0, count: 0 };
+    this.stuck = { t: 0, x: 0, z: 0, count: 0, lt: 0, lx: 0, lz: 0 };
     this.doorT = 0;
     this.lootUntil = 0;
     this.coverPoint = null;
@@ -175,7 +175,7 @@ export class BotController {
     const bi = m.buildingIndex;
     const here = bi.at(b.x, b.y, b.z);
     const there = bi.at(x, y, z);
-    const pts = [];
+    const exit = [];
     if (here && here !== there) {
       // exit via nearest entrance
       const n0 = nearestNode(here, b.x, b.y, b.z);
@@ -184,8 +184,9 @@ export class BotController {
         const p = buildingPath(here, n0, e);
         if (p && (!best || p.length < best.length)) best = p;
       }
-      if (best) for (const i of best) pts.push(here.nav.nodes[i]);
+      if (best) for (const i of best) exit.push(here.nav.nodes[i]);
     }
+    const pts = [];
     if (there) {
       const entryFrom = here === there ? nearestNode(there, b.x, b.y, b.z) : null;
       const goalNode = nearestNode(there, x, y, z);
@@ -203,9 +204,24 @@ export class BotController {
       if (best) for (const i of best) pts.push(there.nav.nodes[i]);
     }
     pts.push({ x, y, z });
-    this.route = pts;
+    // long outdoor leg (building exit -> entrance/target): coarse grid route around obstacles
+    let routeT = 6;
+    let leg = [];
+    if (!here || here !== there) {
+      const from = exit.length ? exit[exit.length - 1] : b;
+      const to = pts[0];
+      if (Math.hypot(to.x - from.x, to.z - from.z) > 24) {
+        leg = m.navPath(from, to);
+        if (leg) routeT = 12;
+        else {
+          leg = [];
+          routeT = 0.3; // search budget spent this frame: head straight for now, retry soon
+        }
+      }
+    }
+    this.route = [...exit, ...leg, ...pts];
     this.routeTarget = { x, y, z };
-    this.routeT = 6;
+    this.routeT = routeT;
   }
 
   // Move toward a point; returns remaining horizontal distance
@@ -229,7 +245,12 @@ export class BotController {
     if (!wp) return d;
     // walk straight when the line to the waypoint is clear, otherwise steer around obstacles
     const nearBuilding = this.m.buildingIndex.at(b.x, b.y, b.z, 0.3);
-    const dir = this.escapeT > 0 ? this.escapeDir : clearLine(this.m.world.collision, b, wp) ? direct(b, wp) : steer(this.ch, wp.x, wp.z, this.m.world, this.nav);
+    const dir =
+      this.escapeT > 0
+        ? this.escapeDir
+        : clearLine(this.m.world.collision, b, wp)
+          ? direct(b, wp)
+          : steer(this.ch, wp.x, wp.z, this.m.world, this.nav);
     if (this.escapeT > 0) this.escapeT -= dt;
     this.moveDir.x = dir.x;
     this.moveDir.z = dir.z;
@@ -254,6 +275,21 @@ export class BotController {
   checkStuck(dt, wantsMove) {
     const s = this.stuck;
     const b = this.ch.body;
+    // long window: catches back-and-forth oscillation that the 1 s check below misses
+    s.lt += dt;
+    if (s.lt >= 6) {
+      const net = Math.hypot(b.x - s.lx, b.z - s.lz);
+      s.lt = 0;
+      s.lx = b.x;
+      s.lz = b.z;
+      if (wantsMove && net < 3 && this.goal !== "engage" && this.goal !== "cover") {
+        this.routeT = 0;
+        this.nav.side = -(this.nav.side || 1);
+        const a = this.rng.range(0, TAU);
+        this.escapeDir = { x: Math.cos(a), z: Math.sin(a) };
+        this.escapeT = 2;
+      }
+    }
     s.t += dt;
     if (s.t < 1) return;
     const moved = Math.hypot(b.x - s.x, b.z - s.z);
@@ -436,12 +472,22 @@ export class BotController {
     const armed = this.bestSlot(enemy ? Math.hypot(enemy.body.x - b.x, enemy.body.z - b.z) : 50) >= 0;
     const zone = m.zone;
     const scores = [];
+    const lootWindow = now < this.lootUntil;
     // engage / flee
     if (enemy) {
       const d = Math.hypot(enemy.body.x - b.x, enemy.body.z - b.z);
-      if (armed) scores.push(["engage", 100 + this.aggr * 10]);
-      else if (ch.loadout.slots[3] && d < 8) scores.push(["engage", 95]);
-      else scores.push(["flee", 98]);
+      if (armed) {
+        // picking fights at range is for the bold (fresh looters keep quiet unless close);
+        // anyone shot at recently answers back
+        if (d < (lootWindow ? 30 : 60) || this.aggr > 0.7 || now - (this.hurtAt ?? -99) < 8)
+          scores.push(["engage", 100 + this.aggr * 10]);
+      } else if (ch.loadout.slots[3] && d < 8) scores.push(["engage", 95]);
+      else {
+        // unarmed: grab nearby gear rather than run, unless the enemy is closer than it
+        const t = this.findLoot(18);
+        if (t && Math.hypot(t.p.x - b.x, t.p.z - b.z) < d) scores.push(["loot", 99]);
+        scores.push(["flee", 98]);
+      }
       if (armed && ch.health < 35 && this.hasHeal()) scores.push(["cover", 104]);
     } else if (ch.health < 70 && this.hasHeal() && now - (this.hurtAt ?? -99) > 2.5) {
       scores.push(["heal", 80 + (70 - ch.health) * 0.5]);
@@ -459,18 +505,19 @@ export class BotController {
       const nextOut = Math.hypot(b.x - zone.next.x, b.z - zone.next.z) - zone.next.r * 0.85;
       if (out > 0) scores.push(["zone", 118 + Math.min(20, out * 0.1)]);
       else if (nextOut > 0) {
-        const need = nextOut / 5.5;
-        const left = zone.timeLeft + (zone.state === "waiting" ? 40 : 0);
-        const urgency = need / Math.max(1, left);
-        scores.push(["zone", 50 + Math.min(60, urgency * 90)]);
+        // time until the moving edge reaches us (most of the shrink still counts while waiting)
+        const tl = zone.timeline[zone.phase];
+        const left = zone.timeLeft + (zone.state === "waiting" ? (tl.tE - tl.tS) * 0.7 : 0);
+        const urgency = nextOut / 5.5 / Math.max(1, left);
+        if (urgency > 0.35) scores.push(["zone", Math.min(115, 40 + (urgency - 0.35) * 160)]);
       }
     }
     // loot
-    const lootWindow = now < this.lootUntil;
     const needGear = !armed || !ch.inv.vest || !ch.inv.helmet || !this.hasHeal();
     if (lootWindow || needGear) {
-      const t = this.findLoot(lootWindow ? 38 : 26);
-      if (t) scores.push(["loot", (lootWindow ? 60 : 45) + t.score * 0.25]);
+      // without a usable gun, search much further (grid routes make distant loot reachable)
+      const t = this.findLoot(lootWindow ? 38 : armed ? 26 : 70);
+      if (t) scores.push(["loot", (lootWindow ? 60 : armed ? 45 : 70) + t.score * 0.25]);
       else this.lootTarget = null;
     }
     // investigate sounds / last known enemies
@@ -606,7 +653,8 @@ export class BotController {
     this.checkStuck(dt, wantsMove);
     // keep a loaded weapon when idle
     const w = ch.loadout.current();
-    if (!this.enemy && w && WEAPONS[w.id] && WEAPONS[w.id].ammo && w.mag < magSize(w) * 0.5 && !ch.action) c.reload = true;
+    if (!this.enemy && w && WEAPONS[w.id] && WEAPONS[w.id].ammo && w.mag < magSize(w) * 0.5 && !ch.action)
+      c.reload = true;
     if (!w && !ch.action) {
       const s = this.bestSlot(60);
       if (s >= 0) c.select = s;
@@ -688,7 +736,12 @@ export class BotController {
       this.wantStance = want;
     }
     this.applyStance(this.wantStance || "stand");
-    if (!e.visible && ch.inv.count("frag") > 0 && this.m.time - (this.lastThrow ?? -99) > 14 && this.skill > 0.3) {
+    if (
+      !e.visible &&
+      ch.inv.count("frag") > 0 &&
+      this.m.time - (this.lastThrow ?? -99) > 14 &&
+      this.skill > 0.3
+    ) {
       const gd = Math.hypot(e.x - b.x, e.z - b.z);
       if (gd > 10 && gd < 32) {
         this.goal = "grenade";

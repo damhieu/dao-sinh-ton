@@ -76,6 +76,24 @@ export class CollisionWorld {
     return out;
   }
 
+  // vertical extent [minY, maxY] of collider id
+  yRange(id, out) {
+    const o = id * STRIDE;
+    const D = this.data;
+    const k = this.kind[id];
+    if (k === K_BOX) {
+      out[0] = D[o + 1];
+      out[1] = D[o + 4];
+    } else if (k === K_CYL) {
+      out[0] = D[o + 3];
+      out[1] = D[o + 4];
+    } else {
+      out[0] = D[o + 1] - D[o + 3];
+      out[1] = D[o + 1] + D[o + 3];
+    }
+    return out;
+  }
+
   cellRange(minX, minZ, maxX, maxZ, out) {
     const c = this.cell;
     const n = this.n - 1;
