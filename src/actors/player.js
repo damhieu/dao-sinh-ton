@@ -41,7 +41,7 @@ export class PlayerController {
       this.freePitch = this.viewPitch;
     }
     if (!alt && this.freeLook) this.freeLook = false;
-    if (i.locked) {
+    if (i.locked && !this.uiOpen) {
       const dy = i.dy * (s.invertY ? -1 : 1);
       if (this.freeLook) {
         this.freeYaw -= i.dx * sens;
@@ -69,9 +69,9 @@ export class PlayerController {
     c.reload = i.pressed("KeyR");
     c.fireMode = i.pressed("KeyB");
     c.holster = i.pressed("KeyX");
-    // weapons
-    c.fire = i.btn(MOUSE_LEFT);
-    c.firePressed = i.btnPressed(MOUSE_LEFT);
+    // weapons (disabled while a menu is open)
+    c.fire = i.btn(MOUSE_LEFT) && !this.uiOpen;
+    c.firePressed = i.btnPressed(MOUSE_LEFT) && !this.uiOpen;
     if (s.adsHold) c.ads = i.btn(MOUSE_RIGHT);
     else {
       if (i.btnPressed(MOUSE_RIGHT)) this.adsToggled = !this.adsToggled;

@@ -507,3 +507,208 @@ kbd {
   font-size: 11px;
   opacity: 0.85;
 }
+
+/* ------------------------------------------------------------------ inventory */
+.inventory {
+  position: absolute;
+  inset: 0;
+  display: none;
+  grid-template-columns: 1fr 1fr 1.25fr;
+  gap: 18px;
+  padding: 70px 5vw 60px;
+  background: radial-gradient(ellipse at center, rgba(10, 14, 18, 0.72), rgba(5, 8, 10, 0.9));
+  font-family: var(--font-hud);
+  color: #fff;
+  pointer-events: auto;
+}
+.inventory.on {
+  display: grid;
+}
+.inventory h3 {
+  margin: 0 0 8px;
+  font-size: 17px;
+  letter-spacing: 0.14em;
+  font-weight: 600;
+  opacity: 0.9;
+  display: flex;
+  justify-content: space-between;
+}
+.inventory .col {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.inventory .list {
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding-right: 4px;
+}
+.inventory .group {
+  margin: 8px 0 2px;
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  opacity: 0.6;
+}
+.inventory .row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 44px;
+  padding: 0 10px 0 4px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  cursor: pointer;
+}
+.inventory .row:hover {
+  background: rgba(255, 255, 255, 0.16);
+  border-color: rgba(255, 255, 255, 0.35);
+}
+.inventory .row img {
+  width: 40px;
+  height: 40px;
+  object-fit: contain;
+}
+.inventory .row .nm {
+  flex: 1;
+  font-size: 16px;
+}
+.inventory .row .ct {
+  font-size: 16px;
+  font-weight: 700;
+}
+.inventory .empty {
+  opacity: 0.45;
+  font-size: 14px;
+  padding: 8px;
+}
+.inventory .capbar {
+  height: 4px;
+  margin-bottom: 8px;
+  background: rgba(255, 255, 255, 0.15);
+}
+.inventory .capbar i {
+  display: block;
+  height: 100%;
+  background: #fff;
+}
+.inventory .armor {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.inventory .aslot {
+  position: relative;
+  flex: 1;
+  height: 76px;
+  padding: 4px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  text-align: center;
+  font-size: 13px;
+  cursor: pointer;
+}
+.inventory .aslot img {
+  height: 48px;
+  display: block;
+  margin: 0 auto;
+}
+.inventory .aslot.empty {
+  opacity: 0.4;
+  cursor: default;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.inventory .aslot i {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 3px;
+  width: var(--d);
+  background: #fff;
+}
+.inventory .guns {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.inventory .gun {
+  position: relative;
+  min-height: 92px;
+  padding: 6px 10px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  cursor: pointer;
+}
+.inventory .gun.active {
+  border-color: rgba(255, 255, 255, 0.55);
+}
+.inventory .gun.empty {
+  min-height: 40px;
+  opacity: 0.4;
+  cursor: default;
+}
+.inventory .gun .sl {
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  opacity: 0.6;
+}
+.inventory .gun .gi {
+  position: absolute;
+  left: 10px;
+  top: 20px;
+  width: 150px;
+  height: 56px;
+  object-fit: contain;
+}
+.inventory .gun .gn {
+  position: absolute;
+  left: 170px;
+  top: 20px;
+  font-size: 18px;
+  font-weight: 700;
+}
+.inventory .gun .ga {
+  position: absolute;
+  left: 170px;
+  top: 44px;
+  font-size: 12px;
+  opacity: 0.75;
+}
+.inventory .gun .atts {
+  position: absolute;
+  right: 8px;
+  bottom: 6px;
+  display: flex;
+  gap: 4px;
+}
+.inventory .gun .att {
+  width: 46px;
+  height: 46px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.inventory .gun .att img {
+  width: 42px;
+  height: 42px;
+  object-fit: contain;
+}
+.inventory .gun .att.empty span {
+  font-size: 9px;
+  opacity: 0.6;
+  text-align: center;
+}
+.inventory .hint {
+  position: absolute;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  font-size: 13px;
+  opacity: 0.6;
+  letter-spacing: 0.05em;
+}

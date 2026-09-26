@@ -14,6 +14,9 @@ import { rollLoot } from "../items/loot.js";
 import { ITEMS, WEAPONS, ATTACHMENTS } from "../items/itemdefs.js";
 import { magSize } from "../items/loadout.js";
 import { MAT } from "../world/collision.js";
+import { BotController } from "../actors/bot.js";
+import { BuildingIndex } from "../actors/navigation.js";
+import { makeNames } from "../actors/names.js";
 
 const _v = new THREE.Vector3();
 const _o = { x: 0, y: 0, z: 0 };
@@ -41,6 +44,50 @@ export class Match {
     this.viewmodel = new Viewmodel(this.ctx, this.world.sky.sunDir, this.ctx.scene.environment);
     this.state = "playing";
     this.aliveCount = 0;
+    this.bots = [];
+    this.buildingIndex = new BuildingIndex(this.world.buildings);
+    this.zone = null;
+    this.plane = null;
+    this.airdrops = [];
+    this.visTimer = 0;
+  }
+
+  // Bots with a spread of skill: ~30% rookies, ~50% average, ~20% veterans
+  createBots(n) {
+    const rng = this.rng.fork(9);
+    const names = makeNames(rng, n, this.player ? this.player.name : "");
+    for (let i = 0; i < n; i++) {
+      const ch = this.addCharacter({ name: names[i] });
+      const r = rng.next();
+      const skill = r < 0.3 ? rng.range(0.15, 0.38) : r < 0.8 ? rng.range(0.4, 0.66) : rng.range(0.7, 0.92);
+      ch.bot = new BotController(ch, this, rng.fork(i + 1), { skill, aggression: rng.range(0.2, 0.95) });
+      this.bots.push(ch.bot);
+    }
+    return this.bots;
+  }
+
+  // smoke grenades block line of sight (set up by the grenade system)
+  smokeBlocks(ax, ay, az, bx, by, bz) {
+    return this.smoke ? this.smoke.blocks(ax, ay, az, bx, by, bz) : false;
+  }
+
+  updateVisibility(dt) {
+    this.visTimer -= dt;
+    if (this.visTimer > 0) return;
+    this.visTimer = 0.4;
+    const cam = this.ctx.camera;
+    const cp = cam.position;
+    const fx = -Math.sin(this.gcam.yaw);
+    const fz = -Math.cos(this.gcam.yaw);
+    for (const b of this.bots) {
+      const ch = b.ch;
+      const dx = ch.body.x - cp.x;
+      const dz = ch.body.z - cp.z;
+      const d = Math.hypot(dx, dz);
+      const front = d > 1 ? (dx * fx + dz * fz) / d : 1;
+      ch.visibleToPlayer = d < 60 || (front > 0.45 && d < 450);
+      b.far = d > 350 && !ch.visibleToPlayer;
+    }
   }
 
   // ------------------------------------------------------------------ setup
@@ -243,7 +290,15 @@ export class Match {
     const m = muzzlePosition(ch, _o);
     const suppressed = isSuppressed(w);
     events.emit("shot", { ch, def, weapon: w, x: m.x, y: m.y, z: m.z, suppressed });
-    const fx = this.fx;
+    const range = suppressed ? 60 : def.cls === "SR" ? 400 : 260;
+    for (const b of this.bots) {
+      if (b.ch === ch || !b.ch.alive) continue;
+      const d = Math.hypot(b.ch.body.x - m.x, b.ch.body.z - m.z);
+      if (d < range) b.onHeard(ch, m.x, m.y, m.z, d);
+    }
+    const cam = this.ctx.camera.position;
+    const far = (cam.x - m.x) ** 2 + (cam.z - m.z) ** 2 > 350 * 350;
+    const fx = far ? null : this.fx;
     if (!suppressed && fx) {
       const d = ch.aimDir;
       fx.particles.emit("flash", m.x + d.x * 0.05, m.y + d.y * 0.05, m.z + d.z * 0.05, d.x, d.y, d.z, 3, 1);
@@ -370,6 +425,7 @@ export class Match {
     };
     if (info.attacker && info.attacker !== target) info.attacker.stats.damage += dealt;
     if (target.action && target.action.type === "use") target.cancelAction();
+    if (target.bot) target.bot.onDamaged(info.attacker);
     events.emit("damage", { target, amount: dealt, ...info });
     if (target.health <= 0) this.kill(target, info);
   }
@@ -465,6 +521,8 @@ export class Match {
     c.update(dt);
     if (p.alive && p.mode === "ground" && p.ctrl.interact) this.interact(p);
     if (p.mode === "ground") this.updatePlayerAim();
+    this.updateVisibility(dt);
+    for (const b of this.bots) b.update(dt);
     // weapons + movement for everyone
     for (const ch of this.characters) {
       if (ch.swingT > 0) ch.swingT = ch.swingT > 0.5 ? 0 : ch.swingT + dt;

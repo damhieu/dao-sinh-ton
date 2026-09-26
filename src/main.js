@@ -10,6 +10,8 @@ import { Pickups } from "./items/pickups.js";
 import { renderIcons } from "./items/icons.js";
 import { FX } from "./fx/fx.js";
 import { HUD } from "./ui/hud.js";
+import { InventoryUI } from "./ui/inventoryui.js";
+import { events } from "./core/events.js";
 import { Match } from "./match/match.js";
 import { ITEMS, WEAPONS } from "./items/itemdefs.js";
 import { magSize } from "./items/loadout.js";
@@ -20,6 +22,7 @@ const uiRoot = document.getElementById("ui");
 const settings = loadSettings();
 const ctx = createRenderer(canvas, settings);
 const input = new Input(canvas);
+input.captureKeys = true;
 
 const status = document.createElement("div");
 status.style.cssText =
@@ -54,6 +57,8 @@ async function boot() {
   app.fx = new FX(ctx.scene);
   app.icons = renderIcons(ctx.renderer);
   app.hud = new HUD(uiRoot, app.icons);
+  app.inventory = new InventoryUI(uiRoot, app.icons);
+  events.on("openCrate", (e) => e.ch.isPlayer && openInventory(e.crate));
   startSandbox();
   status.textContent = "";
   let last = performance.now();
@@ -74,31 +79,44 @@ function startSandbox() {
   const town = app.world.data.towns.find((t) => t.id === "oldtown");
   p.setPosition(town.x + 3, app.world.hm.getHeight(town.x + 3, town.z) + 0.5, town.z);
   m.spawnLoot();
-  // shooting targets
-  for (let k = 0; k < 5; k++) {
-    const d = m.addCharacter({ name: `Bia ${k + 1}` });
-    const x = town.x + 3 + (k - 2) * 3;
-    const z = town.z - 25 - k * 8;
-    d.setPosition(x, app.world.hm.getHeight(x, z), z);
-    d.dummy = true;
-    d.ctrl.yaw = Math.PI;
-    d.yaw = Math.PI;
-    if (k % 2) d.inv.equipArmor("helmet", 1 + (k % 3));
-    if (k > 2) d.inv.equipArmor("vest", 2);
-  }
+  // bots scattered around the town, starting unarmed (they must loot)
+  const bots = m.createBots(12);
+  const rng = m.rng.fork(5);
+  bots.forEach((b, i) => {
+    const bl = rng.pick(m.buildingIndex.near(town.x, town.z, 140));
+    const e = bl.nav.nodes[bl.entrances[0] ?? 0] || { x: town.x + i * 3, z: town.z };
+    b.ch.setPosition(e.x, app.world.hm.getHeight(e.x, e.z) + 0.5, e.z);
+    b.lootUntil = 150;
+  });
 }
 
-function tick(dt) {
+function openInventory(crate = null) {
+  if (crate) app.inventory.openCrate(app.match, crate);
+  else app.inventory.toggle(app.match, true);
+  input.unlock();
+  app.match.controller.uiOpen = true;
+}
+
+function closeInventory() {
+  app.inventory.toggle(app.match, false);
+  app.match.controller.uiOpen = false;
+  input.lock();
+}
+
+function tick(dt, render = true) {
   simTime += dt;
   const m = app.match;
+  if (input.pressed("Tab")) app.inventory.open ? closeInventory() : openInventory();
+  if (app.inventory.open && input.pressed("Escape")) closeInventory();
   if (input.pressed("KeyP")) fly.on = !fly.on;
   if (input.pressed("KeyV")) m.gcam.mode = m.gcam.mode === "tpp" ? "fpp" : "tpp";
   if (fly.on) updateFly(dt);
   else m.update(dt);
   app.fx.update(dt, ctx.camera);
   app.hud.update(dt, m);
+  app.inventory.update(m);
   app.world.update(dt, simTime, fly.on ? ctx.camera.position : m.player.body, ctx.camera.position);
-  ctx.render(simTime);
+  if (render) ctx.render(simTime);
   input.endFrame();
 }
 
@@ -196,7 +214,14 @@ installDebugApi({
     app.world.applyQuality(ctx.preset);
   },
   step(n = 1, dt = 1 / 60) {
-    for (let i = 0; i < n; i++) tick(dt);
+    for (let i = 0; i < n; i++) tick(dt, i === n - 1);
+  },
+  // run game logic for `seconds` without rendering (fast-forward), render the last frame
+  simulate(seconds, dt = 1 / 30) {
+    const n = Math.round(seconds / dt);
+    const t0 = performance.now();
+    for (let i = 0; i < n; i++) tick(dt, i === n - 1);
+    return +(performance.now() - t0).toFixed(0);
   },
   measure(n = 12) {
     const gl = ctx.renderer.getContext();

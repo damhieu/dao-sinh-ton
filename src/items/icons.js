@@ -1,7 +1,7 @@
 // Renders item icons from their 3D models once at startup (data URLs for the UI).
 import * as THREE from "three";
 import { ITEMS } from "./itemdefs.js";
-import { groundGeometry } from "./models.js";
+import { groundGeometry, weaponModel } from "./models.js";
 
 export function renderIcons(renderer, size = 128) {
   const scene = new THREE.Scene();
@@ -24,17 +24,17 @@ export function renderIcons(renderer, size = 128) {
   const box = new THREE.Box3();
   const sphere = new THREE.Sphere();
   for (const id of Object.keys(ITEMS)) {
-    const geo = groundGeometry(id);
-    const mesh = new THREE.Mesh(geo, mat);
     const def = ITEMS[id];
-    // weapons are shown side-on; everything else in a 3/4 view
-    if (def.cat === "weapon") mesh.rotation.set(-Math.PI / 2, 0, 0);
+    const isGun = def.cat === "weapon" || def.cat === "melee";
+    // guns: side profile of the held model, barrel pointing right
+    const geo = isGun ? weaponModel(id).geo : groundGeometry(id);
+    const mesh = new THREE.Mesh(geo, mat);
     scene.add(mesh);
     mesh.updateMatrixWorld();
     box.setFromObject(mesh);
     box.getBoundingSphere(sphere);
-    const d = (sphere.radius / Math.sin(THREE.MathUtils.degToRad(15))) * 0.98;
-    const dirV = def.cat === "weapon" ? new THREE.Vector3(0.001, 0.02, 1) : new THREE.Vector3(0.7, 0.75, 1);
+    const d = (sphere.radius / Math.sin(THREE.MathUtils.degToRad(15))) * (isGun ? 0.8 : 0.98);
+    const dirV = isGun ? new THREE.Vector3(1, 0.12, 0.001) : new THREE.Vector3(0.7, 0.75, 1);
     cam.position.copy(sphere.center).addScaledVector(dirV.normalize(), d);
     cam.lookAt(sphere.center);
     renderer.setRenderTarget(rt);

@@ -1,0 +1,73 @@
+// Gamer-style names for bots (Vietnamese flavour).
+const BASE = [
+  "Tuấn_Sniper",
+  "HuyGaming",
+  "MinhOi99",
+  "TrâuCày2k7",
+  "BaoThủ",
+  "SóiĐêm",
+  "RồngĐỏ",
+  "Hổ_Báo_Trường_Mẫu_Giáo",
+  "XạThủMùTạt",
+  "ThợSănGà",
+  "ChiếnBinhHàNội",
+  "LínhSàiGòn",
+  "BéNa_PUBGer",
+  "AnhTư_Bắn_Tỉa",
+  "ChúBaĐiLạc",
+  "MèoMập",
+  "GấuTrúc_Pro",
+  "CáoGià",
+  "KhôngNgủ",
+  "NoobVN",
+  "ProVN_1998",
+  "ĐạiBàngThépp",
+  "BóngMaMiềnTây",
+  "SátThủSuShi",
+  "CaoThủHuế",
+  "TrùmCuối",
+  "ChickenHunter",
+  "GàChiên",
+  "LongBiên",
+  "ThanhHóa_Top1",
+  "NghệAn_Oi",
+  "QuangNinhBoy",
+  "ĐàNẵngGirl",
+  "CầnThơ_Xịn",
+  "HảiPhòng_Chất",
+  "BánhMìPate",
+  "CàPhêSữaĐá",
+  "PhởBò",
+  "BúnChả",
+  "Trà_Đá_Vỉa_Hè",
+  "XeÔmCôngNghệ",
+  "ThầyGiáoBa",
+  "BácSĩ_Mổ_Heo",
+  "KỹSưIT",
+  "SinhViênNghèo",
+  "Lính_Mới",
+  "ÔngNội_Chơi_Game",
+  "TiểuQuỷ",
+  "ThánhLụm",
+  "VuaLỳ",
+  "KingOfKar98",
+  "M416_Lover",
+  "AKM_Only",
+  "ChảoVàng",
+  "PhóNháyBo",
+  "ChạyBoMệtQuá",
+  "NằmBụiCả Trận",
+  "TrốnNhàVệSinh",
+  "LeoNhàTuầnTra",
+  "ĐiXeKhôngĐèn",
+];
+
+export function makeNames(rng, n, exclude = "") {
+  const pool = rng.shuffle(BASE.filter((s) => s !== exclude).slice());
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const base = pool[i % pool.length];
+    out.push(i < pool.length ? base : `${base}${rng.int(2, 99)}`);
+  }
+  return out;
+}
