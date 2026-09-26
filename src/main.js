@@ -99,6 +99,11 @@ function update(dt, t) {
     controller.update(dt);
     if (input.pressed("KeyV")) gcam.mode = gcam.mode === "tpp" ? "fpp" : "tpp";
     player.ads = player.ctrl.ads;
+    if (player.ctrl.interact) {
+      const b0 = player.body;
+      const di = world.doors.nearest(b0.x, b0.y + 1, b0.z);
+      if (di >= 0) world.doors.toggle(di);
+    }
     player.update(dt, world);
     gcam.update(dt, player, { ads: player.ads });
     // aim: character faces the point under the crosshair
@@ -135,6 +140,11 @@ installDebugApi({
     fly.pos.set(x, y, z);
     fly.yaw = yaw;
     fly.pitch = pitch;
+  },
+  lookAt(x, y, z) {
+    const d = new THREE.Vector3(x, y, z).sub(fly.pos);
+    fly.yaw = Math.atan2(-d.x, -d.z);
+    fly.pitch = Math.atan2(d.y, Math.hypot(d.x, d.z));
   },
   play() {
     fly.on = false;

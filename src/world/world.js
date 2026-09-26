@@ -5,6 +5,8 @@ import { createSky } from "./sky.js";
 import { createTerrain, createHeightTexture } from "./terrain.js";
 import { createWater } from "./water.js";
 import { CollisionWorld } from "./collision.js";
+import { createBuildings } from "./buildings.js";
+import { Doors } from "./doors.js";
 
 // setTimeout (not rAF) so loading also progresses while the tab is hidden
 const nextFrame = () => new Promise((r) => setTimeout(r, 0));
@@ -23,6 +25,11 @@ export async function createWorld(ctx, assets, onProgress = () => {}) {
   const heightTex = createHeightTexture(data.hm);
   const terrain = createTerrain(data, assets, ctx);
   const water = createWater(data, terrain.noiseTex, heightTex, ctx);
+  onProgress(0.6, "Dựng nhà cửa");
+  await nextFrame();
+  const bld = createBuildings(data, collision, assets, ctx.scene);
+  const doors = new Doors(ctx.scene, collision, assets);
+  doors.build(bld.buildings);
   onProgress(1, "Xong");
 
   return {
@@ -33,12 +40,16 @@ export async function createWorld(ctx, assets, onProgress = () => {}) {
     terrain,
     water,
     heightTex,
+    buildings: bld.buildings,
+    buildingTris: bld.tris,
+    doors,
     isLand(x, z) {
       return data.hm.getHeight(x, z) > 1.5;
     },
     update(dt, time, focus) {
       sky.update(focus);
       water.update(time);
+      doors.update(dt);
     },
   };
 }

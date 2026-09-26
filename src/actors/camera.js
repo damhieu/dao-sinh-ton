@@ -116,9 +116,31 @@ export class GameCamera {
     const len = Math.hypot(dx, dy, dz);
     if (len < 1e-3) return;
     const col = this.world.collision;
-    if (col.raycast(from.x, from.y, from.z, dx / len, dy / len, dz / len, len + 0.25, F_VISION, _hit)) {
-      const t = Math.max(0.15, _hit.t - 0.25);
-      to.set(from.x + (dx / len) * t, from.y + (dy / len) * t, from.z + (dz / len) * t);
+    const ux = dx / len;
+    const uy = dy / len;
+    const uz = dz / len;
+    // approximate a sphere cast with 5 parallel rays so the camera cannot slip through windows
+    let best = len + 0.3;
+    const R = 0.28;
+    const offs = [
+      [0, 0],
+      [R, 0],
+      [-R, 0],
+      [0, R],
+      [0, -R],
+    ];
+    for (const [a, c] of offs) {
+      const ox = from.x + this.right.x * a + this.up.x * c;
+      const oy = from.y + this.right.y * a + this.up.y * c;
+      const oz = from.z + this.right.z * a + this.up.z * c;
+      if (col.raycast(ox, oy, oz, ux, uy, uz, best, F_VISION, _hit)) {
+        // offset rays that start inside geometry (pivot hugging a wall) are ignored
+        if (_hit.t > 0.05 || (a === 0 && c === 0)) best = Math.min(best, _hit.t);
+      }
+    }
+    if (best < len + 0.3) {
+      const t = Math.max(0.12, best - 0.3);
+      to.set(from.x + ux * t, from.y + uy * t, from.z + uz * t);
     }
   }
 
