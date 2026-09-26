@@ -60,7 +60,7 @@ function buildCap() {
   ]);
 }
 
-function buildHelmet(level) {
+export function buildHelmet(level) {
   if (level === 1) {
     // motorcycle-style open helmet
     return merge([
@@ -98,7 +98,7 @@ function buildTorso() {
   ]);
 }
 
-function buildVest(level) {
+export function buildVest(level) {
   const c = level === 1 ? 0x27324a : level === 2 ? 0x55603f : 0x1f2322;
   const p = level === 1 ? 0x1f283b : level === 2 ? 0x46502f : 0x161919;
   const parts = [rbox(0.4, 0.34, 0.27, 0.05, c, 0, 0.27, -0.002)];
@@ -114,7 +114,7 @@ function buildVest(level) {
   return merge(parts);
 }
 
-function buildPack(level) {
+export function buildPack(level) {
   const c = level === 1 ? 0x5b5540 : level === 2 ? 0x4a5236 : 0x3b4030;
   const d = level === 1 ? 0x48432f : level === 2 ? 0x3a4129 : 0x2c3024;
   const w = 0.28 + level * 0.03;
@@ -315,6 +315,9 @@ export class RigRenderer {
       lastWalked: ch.walked,
       moveAngle: 0,
       weaponMatrix: new THREE.Matrix4(),
+      chestMatrix: new THREE.Matrix4(),
+      headMatrix: new THREE.Matrix4(),
+      poseVisible: false,
       weaponVisible: false,
       recoil: 0,
       hidden: false,
@@ -420,6 +423,8 @@ export class RigRenderer {
     const headPitch = aimPitch * 0.5 * upright + a.prone * 1.15 + a.freefall * 0.9 - a.dead * 0.2;
     child(mHead, mChest, 0, 0.48, 0, headPitch, 0, 0);
 
+    a.chestMatrix.copy(mChest);
+    a.headMatrix.copy(mHead);
     if (write) {
       M.pelvis.setMatrixAt(slot, mPelvis);
       M.torso.setMatrixAt(slot, mChest);
@@ -638,6 +643,7 @@ export class RigRenderer {
       const hidden =
         ch.anim.hidden || d > maxDist || ch.mode === "plane" || (ch.mode === "vehicle" && !ch.showInVehicle);
       this.updateAnim(ch, dt);
+      ch.anim.poseVisible = !hidden;
       if (hidden) {
         this.hide(ch);
         a_weaponOff(ch);

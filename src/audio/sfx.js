@@ -14,9 +14,8 @@
 
 const TAU = Math.PI * 2;
 const PEAK = 0.891; // -1 dBFS
-const LP = 0;
+const LP = 0; // svf() modes; any other value gives the high-pass output
 const BP = 1;
-const HP = 2;
 
 // -------------------------------------------------------------------------------------------------
 // Basic helpers
@@ -302,22 +301,27 @@ function finish(x, sr) {
   const a = Math.exp((-TAU * 18) / sr);
   let px = 0;
   let py = 0;
+  let p = 0;
   for (let i = 0; i < x.length; i++) {
     const v = x[i];
     py = a * (py + v - px);
     px = v;
     x[i] = py;
+    const m = py < 0 ? -py : py;
+    if (m > p) p = m;
   }
-  const p = peakOf(x);
   if (!(p > 1e-9)) return x;
   const th = p * 3e-4;
   let end = x.length;
   while (end > 1 && Math.abs(x[end - 1]) < th) end--;
   end = Math.min(x.length, end + ns(sr, 0.01));
-  const y = end < x.length ? x.slice(0, end) : x;
-  const f = Math.min(y.length, ns(sr, 0.015));
-  for (let i = 0; i < f; i++) y[y.length - 1 - i] *= i / f;
-  return scaleTo(y, PEAK);
+  const y = end < x.length ? x.subarray(0, end) : x;
+  const len = y.length;
+  const f = Math.min(len, ns(sr, 0.015));
+  const k = PEAK / p;
+  for (let i = 0; i < len - f; i++) y[i] *= k;
+  for (let i = len - f; i < len; i++) y[i] *= (k * (len - 1 - i)) / f;
+  return y;
 }
 
 /** Final pass for loops: circular DC block and normalise (length is kept exact). */
@@ -391,18 +395,20 @@ function modal(out, sr, t, modes, gain, att = 0) {
   const s = new Float32Array(n);
   for (const [f, amp, tau] of modes) {
     if (f >= sr * 0.45 || f <= 0) continue;
+    // Two-pole resonator recurrence: y[i] = amp * r^i * sin(w i).
     const w = (TAU * f) / sr;
-    const c = Math.cos(w);
-    const sn = Math.sin(w);
-    const k = Math.exp(-1 / (tau * sr));
+    const r = Math.exp(-1 / (tau * sr));
+    const c = 2 * r * Math.cos(w);
+    const r2 = r * r;
     const m = Math.min(n, ns(sr, tau * 7));
-    let re = amp;
-    let im = 0;
-    for (let i = 0; i < m; i++) {
-      s[i] += im;
-      const r = (re * c - im * sn) * k;
-      im = (re * sn + im * c) * k;
-      re = r;
+    let y2 = 0;
+    let y1 = amp * r * Math.sin(w);
+    if (m > 1) s[1] += y1;
+    for (let i = 2; i < m; i++) {
+      const y = c * y1 - r2 * y2;
+      s[i] += y;
+      y2 = y1;
+      y1 = y;
     }
   }
   if (att > 0) envelope(s, sr, att, 1e6);
@@ -798,7 +804,7 @@ const GUNS = {
     f0: 130,
     f1: 42,
     tt: 0.075,
-    tg: 1.15,
+    tg: 1.05,
     mech: 0.1,
     mf: 2900,
     tl: 0.42,
@@ -821,7 +827,7 @@ const GUNS = {
     f0: 118,
     f1: 36,
     tt: 0.095,
-    tg: 1.3,
+    tg: 1.12,
     mech: 0,
     mf: 0,
     tl: 0.46,
@@ -837,7 +843,7 @@ const GUNS = {
   },
   shotgun: {
     len: 1.4,
-    bf: 560,
+    bf: 650,
     bq: 0.6,
     bt: 0.035,
     ck: 0.55,
@@ -845,7 +851,7 @@ const GUNS = {
     f0: 100,
     f1: 38,
     tt: 0.11,
-    tg: 1.35,
+    tg: 1.1,
     mech: 0,
     mf: 0,
     tl: 0.45,
@@ -884,7 +890,7 @@ function gunshot(rng, sr, g) {
     dur: bodyDur,
     att: 0.0003,
     tau: vary(rng, g.bt, 0.12),
-    slow: 0.22,
+    slow: 0.3,
     tau2: g.bt * 3.5,
     gain: 1,
     f: [
@@ -892,23 +898,24 @@ function gunshot(rng, sr, g) {
       ["lp", g.bf * 4, 0.7],
     ],
   });
-  // Low-mid weight and the chest thump.
+  // Low-mid weight and the chest thump. The thump is kept short and not too low so that the
+  // audible 0.4–8 kHz "bark" still carries the loudness on small speakers.
   burst(dry, sr, rng, {
     t: t0,
     dur: bodyDur,
     att: 0.001,
     tau: g.bt * 2.5,
-    gain: 0.55 * g.tg,
+    gain: 0.5 * g.tg,
     f: [["lp", 380, 0.8]],
   });
   thump(dry, sr, {
     t: t0,
     f0: vary(rng, g.f0, 0.06),
-    f1: g.f1,
-    sweep: g.tt * 0.45,
+    f1: g.f1 * 1.12,
+    sweep: g.tt * 0.4,
     att: 0.0012,
-    tau: vary(rng, g.tt, 0.1),
-    gain: 0.9 * g.tg,
+    tau: vary(rng, g.tt * 0.8, 0.1),
+    gain: 0.55 * g.tg,
     drive: 2,
   });
   mix(out, dry, sr, 0);
@@ -921,9 +928,9 @@ function gunshot(rng, sr, g) {
     click(out, sr, rng, rr(rng, 0.05, 0.07), vary(rng, g.mf * 0.8, 0.06), g.mech * 0.7, 0.01);
   }
   // Slapback echoes from terrain and buildings: progressively duller copies of the report.
+  const head = fadeOut(dry.slice(0, Math.min(dry.length, ns(sr, 0.3))), sr, 0.03);
   for (const [d, gn] of g.slaps) {
-    const e = filt(dry.slice(), "lp", 2200 / (1 + d * 3), 0.7, sr);
-    filt(e, "hp", 90, 0.7, sr);
+    const e = filt(head.slice(), "lp", 2200 / (1 + d * 3), 0.7, sr);
     mix(out, e, sr, vary(rng, d, 0.12), gn * rr(rng, 0.8, 1.1));
   }
   // Diffuse tail whose low-pass closes over time (air absorbs the highs first).
@@ -1261,12 +1268,12 @@ function impactFlesh(rng, sr) {
   const out = new Float32Array(ns(sr, 0.3));
   thump(out, sr, {
     t: 0.001,
-    f0: vary(rng, 170, 0.1),
-    f1: 85,
+    f0: vary(rng, 190, 0.1),
+    f1: 110,
     sweep: 0.008,
     att: 0.0006,
-    tau: 0.03,
-    gain: 0.9,
+    tau: 0.025,
+    gain: 0.6,
     drive: 2,
   });
   burst(out, sr, rng, {
@@ -1274,10 +1281,10 @@ function impactFlesh(rng, sr) {
     dur: 0.1,
     att: 0.0003,
     tau: 0.014,
-    gain: 0.6,
+    gain: 0.85,
     f: [["bp", vary(rng, 900, 0.12), 0.9]],
   });
-  burst(out, sr, rng, { t: 0.001, dur: 0.05, att: 0, tau: 0.006, gain: 0.3, f: [["bp", 2400, 1.2]] });
+  burst(out, sr, rng, { t: 0.001, dur: 0.05, att: 0, tau: 0.006, gain: 0.4, f: [["bp", 2400, 1.2]] });
   burst(out, sr, rng, { t: 0.004, dur: 0.2, att: 0.004, tau: 0.04, gain: 0.3, f: [["lp", 1200, 0.7]] });
   for (let i = 0; i < 3; i++) {
     bubble(out, sr, rr(rng, 0.01, 0.08), rr(rng, 300, 600), 15, rr(rng, 0.01, 0.02), 0.08);

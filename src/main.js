@@ -3,16 +3,20 @@ import { createRenderer } from "./core/renderer.js";
 import { loadAssets } from "./core/assets.js";
 import { loadSettings } from "./core/settings.js";
 import { Input } from "./core/input.js";
-import { RNG } from "./core/rng.js";
 import { createWorld } from "./world/world.js";
-import { Character } from "./actors/character.js";
-import { RigRenderer, makeLook } from "./actors/rig.js";
-import { GameCamera } from "./actors/camera.js";
-import { PlayerController } from "./actors/player.js";
+import { RigRenderer, MAX_CHARS } from "./actors/rig.js";
+import { HeldWeapons } from "./items/heldweapons.js";
+import { Pickups } from "./items/pickups.js";
+import { renderIcons } from "./items/icons.js";
+import { FX } from "./fx/fx.js";
+import { HUD } from "./ui/hud.js";
+import { Match } from "./match/match.js";
+import { ITEMS, WEAPONS } from "./items/itemdefs.js";
+import { magSize } from "./items/loadout.js";
 import { installDebugApi } from "./debug/debugapi.js";
 
 const canvas = document.getElementById("game");
-const ui = document.getElementById("ui");
+const uiRoot = document.getElementById("ui");
 const settings = loadSettings();
 const ctx = createRenderer(canvas, settings);
 const input = new Input(canvas);
@@ -20,16 +24,22 @@ const input = new Input(canvas);
 const status = document.createElement("div");
 status.style.cssText =
   "position:fixed;left:16px;bottom:16px;font:600 14px var(--font-hud);letter-spacing:.06em;color:#fff;text-shadow:0 1px 3px #000";
-ui.appendChild(status);
+uiRoot.appendChild(status);
 
-// Debug fly camera
+const app = {
+  ctx,
+  settings,
+  input,
+  world: null,
+  rig: null,
+  held: null,
+  pickups: null,
+  fx: null,
+  icons: null,
+  hud: null,
+  match: null,
+};
 const fly = { on: false, pos: new THREE.Vector3(0, 320, 900), yaw: 0, pitch: -0.35 };
-
-let world = null;
-let rig = null;
-let player = null;
-let controller = null;
-let gcam = null;
 let fps = 60;
 let simTime = 0;
 const _v = new THREE.Vector3();
@@ -37,40 +47,59 @@ const _v = new THREE.Vector3();
 async function boot() {
   const report = (p, label) => (status.textContent = `${label} ${Math.round(p * 100)}%`);
   const assets = await loadAssets(ctx.renderer, report);
-  world = await createWorld(ctx, assets, report);
-  rig = new RigRenderer(ctx.scene);
-  const rng = new RNG(7);
-  player = new Character({ id: 0, name: settings.name, isPlayer: true, look: makeLook(rng) });
-  rig.add(player);
-  const town = world.data.towns.find((t) => t.id === "oldtown");
-  player.setPosition(town.x, world.hm.getHeight(town.x, town.z) + 1, town.z);
-  gcam = new GameCamera(ctx.camera, world);
-  gcam.baseFov = settings.fov;
-  controller = new PlayerController(player, input, gcam, settings);
-  // a few idle dummies to look at
-  for (let k = 0; k < 4; k++) {
-    const d = new Character({ id: k + 1, name: `Bot ${k}`, look: makeLook(rng) });
-    rig.add(d);
-    const x = town.x + 4 + k * 2.5;
-    const z = town.z - 6;
-    d.setPosition(x, world.hm.getHeight(x, z), z);
-    d.stance = ["stand", "crouch", "prone", "stand"][k];
-    if (k === 3) (d.inv.equipArmor("helmet", 2), d.inv.equipArmor("vest", 2), d.inv.equipBackpack(2));
-    d.dummy = true;
-  }
+  app.world = await createWorld(ctx, assets, report);
+  app.rig = new RigRenderer(ctx.scene);
+  app.held = new HeldWeapons(ctx.scene, MAX_CHARS);
+  app.pickups = new Pickups(ctx.scene);
+  app.fx = new FX(ctx.scene);
+  app.icons = renderIcons(ctx.renderer);
+  app.hud = new HUD(uiRoot, app.icons);
+  startSandbox();
   status.textContent = "";
   let last = performance.now();
   const frame = (now) => {
     const dt = Math.min(0.05, (now - last) / 1000);
     last = now;
     fps = fps * 0.95 + (1 / Math.max(dt, 1e-4)) * 0.05;
-    simTime += dt;
-    update(dt, simTime);
-    ctx.render(simTime);
-    input.endFrame();
+    tick(dt);
     requestAnimationFrame(frame);
   };
   requestAnimationFrame(frame);
+}
+
+function startSandbox() {
+  const m = new Match(app);
+  app.match = m;
+  const p = m.createPlayer(settings.name);
+  const town = app.world.data.towns.find((t) => t.id === "oldtown");
+  p.setPosition(town.x + 3, app.world.hm.getHeight(town.x + 3, town.z) + 0.5, town.z);
+  m.spawnLoot();
+  // shooting targets
+  for (let k = 0; k < 5; k++) {
+    const d = m.addCharacter({ name: `Bia ${k + 1}` });
+    const x = town.x + 3 + (k - 2) * 3;
+    const z = town.z - 25 - k * 8;
+    d.setPosition(x, app.world.hm.getHeight(x, z), z);
+    d.dummy = true;
+    d.ctrl.yaw = Math.PI;
+    d.yaw = Math.PI;
+    if (k % 2) d.inv.equipArmor("helmet", 1 + (k % 3));
+    if (k > 2) d.inv.equipArmor("vest", 2);
+  }
+}
+
+function tick(dt) {
+  simTime += dt;
+  const m = app.match;
+  if (input.pressed("KeyP")) fly.on = !fly.on;
+  if (input.pressed("KeyV")) m.gcam.mode = m.gcam.mode === "tpp" ? "fpp" : "tpp";
+  if (fly.on) updateFly(dt);
+  else m.update(dt);
+  app.fx.update(dt, ctx.camera);
+  app.hud.update(dt, m);
+  app.world.update(dt, simTime, fly.on ? ctx.camera.position : m.player.body, ctx.camera.position);
+  ctx.render(simTime);
+  input.endFrame();
 }
 
 function updateFly(dt) {
@@ -89,51 +118,28 @@ function updateFly(dt) {
   if (input.down("KeyQ")) fly.pos.y -= sp;
   ctx.camera.position.copy(fly.pos);
   ctx.camera.rotation.set(fly.pitch, fly.yaw, 0, "YXZ");
-}
-
-function update(dt, t) {
-  if (input.pressed("KeyP")) fly.on = !fly.on;
-  if (fly.on) {
-    updateFly(dt);
-  } else {
-    controller.update(dt);
-    if (input.pressed("KeyV")) gcam.mode = gcam.mode === "tpp" ? "fpp" : "tpp";
-    player.ads = player.ctrl.ads;
-    if (player.ctrl.interact) {
-      const b0 = player.body;
-      const di = world.doors.nearest(b0.x, b0.y + 1, b0.z);
-      if (di >= 0) world.doors.toggle(di);
-    }
-    player.update(dt, world);
-    gcam.update(dt, player, { ads: player.ads });
-    // aim: character faces the point under the crosshair
-    const ap = gcam.computeAimPoint(1000);
-    const b = player.body;
-    const sy = b.y + player.eyeHeight() - 0.15;
-    player.ctrl.pitch = Math.atan2(ap.y - sy, Math.hypot(ap.x - b.x, ap.z - b.z));
-  }
-  rig.update(dt, ctx.camera);
-  world.update(dt, t, fly.on ? ctx.camera.position : player.body, ctx.camera.position);
+  app.rig.update(dt, ctx.camera);
 }
 
 canvas.addEventListener("click", () => input.lock());
 
 installDebugApi({
+  app,
   ctx,
   get world() {
-    return world;
+    return app.world;
+  },
+  get match() {
+    return app.match;
   },
   get player() {
-    return player;
+    return app.match && app.match.player;
   },
   get rig() {
-    return rig;
-  },
-  get cam() {
-    return gcam;
+    return app.rig;
   },
   get ready() {
-    return !!world;
+    return !!app.match;
   },
   fly(x, y, z, yaw = fly.yaw, pitch = fly.pitch) {
     fly.on = true;
@@ -150,37 +156,48 @@ installDebugApi({
     fly.on = false;
   },
   teleport(x, z, y) {
-    player.setPosition(x, y ?? world.hm.getHeight(x, z) + 0.5, z);
-    player.body.vy = 0;
+    const p = app.match.player;
+    p.setPosition(x, y ?? app.world.hm.getHeight(x, z) + 0.5, z);
+    p.body.vy = 0;
     fly.on = false;
   },
   look(yaw, pitch = 0) {
-    controller.setView(yaw, pitch);
+    app.match.controller.setView(yaw, pitch);
   },
   key(code, down = true) {
     input.setKey(code, down);
+  },
+  button(bit, down = true) {
+    input.setButton(bit === 1 ? 0 : bit === 4 ? 2 : 1, down);
   },
   mouse(dx, dy) {
     input.locked = true;
     input.dx += dx;
     input.dy += dy;
   },
+  // give items to the player (weapons come loaded)
+  give(id, n = 1) {
+    const m = app.match;
+    const p = m.player;
+    const r = m.giveItem(p, id, n);
+    if (WEAPONS[id]) {
+      const w = p.loadout.slots.find((s) => s && s.id === id);
+      if (w) w.mag = magSize(w);
+      const ammo = WEAPONS[id].ammo;
+      if (ammo) p.inv.add(ammo, ITEMS[ammo].stack * 4);
+    }
+    return r;
+  },
   stats() {
     return { fps: Math.round(fps), ...ctx.frameStats, pixelRatio: ctx.renderer.getPixelRatio() };
   },
   setQuality(q) {
     ctx.setQuality(q);
+    app.world.applyQuality(ctx.preset);
   },
-  // Advance the game synchronously (works while the tab is hidden and rAF is paused)
   step(n = 1, dt = 1 / 60) {
-    for (let i = 0; i < n; i++) {
-      simTime += dt;
-      update(dt, simTime);
-      input.endFrame();
-    }
-    ctx.render(simTime);
+    for (let i = 0; i < n; i++) tick(dt);
   },
-  // Median CPU+GPU time (ms) of one full render
   measure(n = 12) {
     const gl = ctx.renderer.getContext();
     const px = new Uint8Array(4);

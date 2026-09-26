@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Audio test — ĐẢO SINH TỒN</title>
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+      body {
+        margin: 0;
+        padding: 16px 20px 48px;
+        font:
+          14px/1.45 system-ui,
+          sans-serif;
+        background: #14171b;
+        color: #dfe4ea;
+      }
+      h1 {
+        font-size: 18px;
+        margin: 0 0 12px;
+      }
+      h2 {
+        font-size: 12px;
+        margin: 20px 0 6px;
+        color: #8fa3b8;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+      }
+      button {
+        margin: 2px;
+        padding: 6px 10px;
+        border: 1px solid #36404c;
+        border-radius: 4px;
+        background: #232a32;
+        color: inherit;
+        font: inherit;
+        cursor: pointer;
+      }
+      button:hover:not(:disabled) {
+        background: #2f3843;
+      }
+      button:disabled {
+        opacity: 0.4;
+        cursor: default;
+      }
+      button.on {
+        background: #2f5e3a;
+        border-color: #4c8a59;
+      }
+      .row {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 6px 14px;
+      }
+      label {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+      }
+      #status {
+        color: #f0c36a;
+      }
+      .hint {
+        color: #8fa3b8;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>ĐẢO SINH TỒN — procedural audio test</h1>
+    <div class="row">
+      <button id="init">Init audio</button>
+      <span id="status">Not initialised. Click to create the AudioContext and synthesise all sounds.</span>
+    </div>
+
+    <h2>Mix and listener</h2>
+    <div class="row">
+      <label>Master <input id="master" type="range" min="0" max="1" step="0.01" value="1" /></label>
+      <label>SFX <input id="sfx" type="range" min="0" max="1" step="0.01" value="1" /></label>
+      <label
+        >Source direction
+        <select id="dir">
+          <option value="0">front</option>
+          <option value="90">right</option>
+          <option value="270">left</option>
+          <option value="180">behind</option>
+        </select>
+      </label>
+      <span class="hint">Listener at (0, 1.7, 0) facing −Z. Active voices: <b id="voices">0</b></span>
+    </div>
+
+    <h2>Gunshots (distance filtering + speed-of-sound delay)</h2>
+    <div class="row">
+      <label
+        >Kind
+        <select id="kind">
+          <option>ar</option>
+          <option>akm</option>
+          <option>smg</option>
+          <option>pistol</option>
+          <option>dmr</option>
+          <option>sniper</option>
+          <option>shotgun</option>
+        </select>
+      </label>
+      <label><input id="supp" type="checkbox" /> suppressed</label>
+      <button data-shot="local" disabled>Local (own gun)</button>
+      <button data-shot="10" disabled>10 m</button>
+      <button data-shot="150" disabled>150 m</button>
+      <button data-shot="500" disabled>500 m</button>
+      <button data-burst="10" disabled>Burst ×10 @ 10 m</button>
+      <button data-burst="150" disabled>Burst ×10 @ 150 m</button>
+    </div>
+
+    <h2>Helpers</h2>
+    <div class="row" id="helpers"></div>
+
+    <h2>Loops (click to toggle)</h2>
+    <div class="row">
+      <label><input id="loopSpatial" type="checkbox" /> spatial @ 12 m</label>
+      <label
+        >engine_loop rate <input id="rate" type="range" min="0.6" max="2" step="0.01" value="1" />
+        <span id="rateVal">1.00</span></label
+      >
+    </div>
+    <div class="row" id="loops"></div>
+
+    <h2>All sounds — play(name) at 8 m in the chosen direction (shift-click: non-spatial)</h2>
+    <div class="row" id="sounds"></div>
+
+    <script type="module">
+      import audio, { SOUND_NAMES, LOOP_NAMES } from "/src/audio/engine.js";
+
+      const $ = (id) => document.getElementById(id);
+      const controls = [...document.querySelectorAll("[data-shot],[data-burst]")];
+
+      /** World position `d` metres from the listener in the selected direction. */
+      function pos(d) {
+        const a = (Number($("dir").value) * Math.PI) / 180;
+        return [Math.sin(a) * d, 1.7, -Math.cos(a) * d];
+      }
+
+      function button(parent, label, onClick) {
+        const b = document.createElement("button");
+        b.textContent = label;
+        b.disabled = true;
+        b.addEventListener("click", (e) => {
+          audio.resume();
+          onClick(e, b);
+        });
+        $(parent).append(b);
+        controls.push(b);
+        return b;
+      }
+
+      $("init").addEventListener("click", async () => {
+        $("init").disabled = true;
+        $("status").textContent = "Synthesising…";
+        const t0 = performance.now();
+        await audio.init();
+        const wall = Math.round(performance.now() - t0);
+        if (!audio.ready) {
+          $("status").textContent = "Web Audio is not available in this browser.";
+          return;
+        }
+        audio.setListener(0, 1.7, 0, 0, 0, -1, 0, 1, 0);
+        $("status").textContent =
+          `Ready: ${SOUND_NAMES.length} sounds. Synthesis ${audio.genMs} ms of CPU ` +
+          `(init wall-clock ${wall} ms, including yields to the event loop).`;
+        for (const b of controls) b.disabled = false;
+      });
+
+      $("master").addEventListener("input", (e) => audio.setMasterVolume(Number(e.target.value)));
+      $("sfx").addEventListener("input", (e) => audio.setSfxVolume(Number(e.target.value)));
+      setInterval(() => ($("voices").textContent = audio.activeVoices), 150);
+
+      // Gunshots
+      function shot(where) {
+        const kind = $("kind").value;
+        const suppressed = $("supp").checked;
+        if (where === "local") audio.gunshot(kind, 0, 0, 0, { suppressed, local: true });
+        else audio.gunshot(kind, ...pos(Number(where)), { suppressed });
+      }
+      for (const b of document.querySelectorAll("[data-shot]")) {
+        b.addEventListener("click", () => {
+          audio.resume();
+          shot(b.dataset.shot);
+        });
+      }
+      for (const b of document.querySelectorAll("[data-burst]")) {
+        b.addEventListener("click", () => {
+          audio.resume();
+          for (let i = 0; i < 10; i++) setTimeout(() => shot(b.dataset.burst), i * 86); // ~700 rpm
+        });
+      }
+
+      // Helpers
+      for (const m of ["dirt", "concrete", "metal", "wood", "flesh", "water", "glass"]) {
+        button("helpers", `impact ${m} @15 m`, () => audio.impact(m, ...pos(15)));
+      }
+      for (const s of ["grass", "hard", "wood", "water", "sand"]) {
+        button("helpers", `step ${s} @4 m`, () => audio.footstep(s, ...pos(4)));
+      }
+      button("helpers", "whiz @1.5 m", () => audio.whiz(...pos(1.5)));
+      button("helpers", "explosion @30 m", () => audio.explosion(...pos(30)));
+      button("helpers", "explosion @300 m", () => audio.explosion(...pos(300)));
+      for (const u of ["click", "hover", "pickup", "equip", "open", "close", "alert"]) {
+        button("helpers", `ui ${u}`, () => audio.ui(u));
+      }
+
+      // Loops
+      const handles = new Map();
+      for (const name of LOOP_NAMES) {
+        button("loops", name, (e, b) => {
+          const h = handles.get(name);
+          if (h) {
+            h.stop(0.4);
+            handles.delete(name);
+            b.classList.remove("on");
+            return;
+          }
+          const opts = { rate: name === "engine_loop" ? Number($("rate").value) : 1 };
+          if ($("loopSpatial").checked) [opts.x, opts.y, opts.z] = pos(12);
+          handles.set(name, audio.loop(name, opts));
+          b.classList.add("on");
+        });
+      }
+      $("rate").addEventListener("input", (e) => {
+        const r = Number(e.target.value);
+        $("rateVal").textContent = r.toFixed(2);
+        handles.get("engine_loop")?.setRate(r);
+      });
+
+      // Every sound by name
+      for (const name of SOUND_NAMES) {
+        button("sounds", name, (e) => {
+          if (e.shiftKey) audio.play(name);
+          else {
+            const [x, y, z] = pos(8);
+            audio.play(name, { x, y, z });
+          }
+        });
+      }
+    </script>
+  </body>
+</html>

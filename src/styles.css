@@ -27,3 +27,483 @@ body {
   inset: 0;
   pointer-events: none;
 }
+
+/* ------------------------------------------------------------------ HUD */
+.hud {
+  position: absolute;
+  inset: 0;
+  font-family: var(--font-hud);
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
+  pointer-events: none;
+}
+.hud.dead > :not(.killfeed):not(.counters):not(.notice) {
+  display: none;
+}
+.crosshair {
+  --gap: 8px;
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 0;
+  height: 0;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.crosshair.on {
+  opacity: 0.92;
+}
+.crosshair i {
+  position: absolute;
+  background: #fff;
+  box-shadow: 0 0 2px rgba(0, 0, 0, 0.8);
+}
+.crosshair i:nth-child(1) {
+  width: 2px;
+  height: 9px;
+  left: -1px;
+  bottom: var(--gap);
+}
+.crosshair i:nth-child(2) {
+  width: 2px;
+  height: 9px;
+  left: -1px;
+  top: var(--gap);
+}
+.crosshair i:nth-child(3) {
+  width: 9px;
+  height: 2px;
+  top: -1px;
+  right: var(--gap);
+}
+.crosshair i:nth-child(4) {
+  width: 9px;
+  height: 2px;
+  top: -1px;
+  left: var(--gap);
+}
+.crosshair b {
+  position: absolute;
+  width: 2px;
+  height: 2px;
+  left: -1px;
+  top: -1px;
+  background: #fff;
+}
+.hitmarker {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  opacity: 0;
+}
+.hitmarker.on {
+  opacity: 1;
+}
+.hitmarker i {
+  position: absolute;
+  width: 2px;
+  height: 9px;
+  background: #fff;
+  left: -1px;
+  top: -4px;
+  box-shadow: 0 0 2px #000;
+}
+.hitmarker i:nth-child(1) {
+  transform: rotate(45deg) translateY(-11px);
+}
+.hitmarker i:nth-child(2) {
+  transform: rotate(135deg) translateY(-11px);
+}
+.hitmarker i:nth-child(3) {
+  transform: rotate(225deg) translateY(-11px);
+}
+.hitmarker i:nth-child(4) {
+  transform: rotate(315deg) translateY(-11px);
+}
+.hitmarker.head i {
+  background: #ffd24a;
+}
+.hitmarker.kill i {
+  background: #ff3b30;
+  height: 12px;
+}
+.reddot {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 5px;
+  height: 5px;
+  margin: -2.5px 0 0 -2.5px;
+  border-radius: 50%;
+  background: #ff2a1a;
+  box-shadow: 0 0 6px 2px rgba(255, 40, 20, 0.7);
+  opacity: 0;
+}
+.reddot.on {
+  opacity: 1;
+}
+.scope {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: none;
+}
+.scope.on {
+  display: block;
+}
+.dmgdirs .dir {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 190px;
+  height: 190px;
+  border-radius: 50%;
+  border-top: 6px solid rgba(220, 20, 20, 0.85);
+  filter: blur(1px);
+  opacity: 0;
+}
+.prompt {
+  position: absolute;
+  left: 50%;
+  top: calc(50% + 70px);
+  transform: translateX(-50%);
+  font-size: 19px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  opacity: 0;
+  white-space: nowrap;
+}
+.prompt.on {
+  opacity: 1;
+}
+kbd {
+  display: inline-block;
+  min-width: 24px;
+  padding: 1px 6px;
+  margin-right: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.45);
+  font-family: var(--font-hud);
+  font-weight: 700;
+  text-align: center;
+}
+.notice {
+  position: absolute;
+  left: 50%;
+  top: 22%;
+  transform: translateX(-50%);
+  font-size: 26px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-align: center;
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+.notice b {
+  color: #ff5a4a;
+}
+.notice small {
+  display: block;
+  font-size: 15px;
+  opacity: 0.85;
+  letter-spacing: 0.12em;
+}
+.notice.on {
+  opacity: 1;
+}
+.subnotice {
+  position: absolute;
+  left: 50%;
+  top: calc(50% + 110px);
+  transform: translateX(-50%);
+  padding: 6px 14px;
+  background: rgba(150, 20, 20, 0.55);
+  font-size: 17px;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+.subnotice.on {
+  opacity: 1;
+}
+.killfeed {
+  position: absolute;
+  left: 18px;
+  top: 150px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 16px;
+  font-weight: 600;
+}
+.feeditem {
+  padding: 3px 10px;
+  background: linear-gradient(90deg, rgba(0, 0, 0, 0.55), rgba(0, 0, 0, 0));
+  transition: opacity 0.6s;
+}
+.feeditem .w {
+  color: #c9c9c9;
+  font-weight: 500;
+}
+.feeditem .me {
+  color: #ffcf3a;
+}
+.feeditem.out {
+  opacity: 0;
+}
+.counters {
+  position: absolute;
+  right: 18px;
+  top: 16px;
+  display: flex;
+  gap: 6px;
+}
+.counter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px;
+  background: rgba(0, 0, 0, 0.45);
+}
+.counter .n {
+  font-size: 24px;
+  font-weight: 700;
+}
+.counter .l {
+  font-size: 13px;
+  letter-spacing: 0.1em;
+  opacity: 0.8;
+}
+.zoneinfo {
+  position: absolute;
+  right: 18px;
+  bottom: 300px;
+  font-size: 15px;
+  font-weight: 600;
+  text-align: right;
+}
+.actionbar {
+  position: absolute;
+  left: 50%;
+  top: calc(50% + 150px);
+  transform: translateX(-50%);
+  width: 240px;
+  opacity: 0;
+}
+.actionbar.on {
+  opacity: 1;
+}
+.actionbar .lbl {
+  font-size: 16px;
+  text-align: center;
+  margin-bottom: 4px;
+}
+.actionbar .lbl::after {
+  content: " " attr(data-t) "s";
+  opacity: 0.8;
+}
+.actionbar .track {
+  height: 5px;
+  background: rgba(255, 255, 255, 0.2);
+}
+.actionbar .fill {
+  height: 100%;
+  width: 0;
+  background: #fff;
+}
+.vitals {
+  position: absolute;
+  left: 50%;
+  bottom: 22px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+}
+.gear {
+  display: flex;
+  gap: 4px;
+}
+.gearitem {
+  position: relative;
+  width: 40px;
+  height: 40px;
+  background: rgba(0, 0, 0, 0.35);
+}
+.gearitem:empty {
+  display: none;
+}
+.gearitem img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.gearitem .lv {
+  position: absolute;
+  left: 3px;
+  top: 1px;
+  font-size: 12px;
+  font-weight: 700;
+}
+.gearitem i {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 3px;
+  width: var(--d);
+  background: #fff;
+}
+.bars {
+  width: 380px;
+}
+.boost {
+  display: flex;
+  gap: 3px;
+  margin-bottom: 4px;
+}
+.boost i {
+  --f: 0;
+  flex: 1;
+  height: 4px;
+  background: linear-gradient(90deg, #ffb12a calc(var(--f) * 100%), rgba(255, 255, 255, 0.12) 0);
+}
+.health {
+  position: relative;
+  height: 14px;
+  background: rgba(0, 0, 0, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+}
+.health .fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 100%;
+  background: #f2f2f2;
+  z-index: 2;
+  transition: width 0.12s;
+}
+.health .ghost {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 100%;
+  background: rgba(255, 70, 50, 0.7);
+  z-index: 1;
+}
+.health.mid .fill {
+  background: #ffd0c0;
+}
+.health.low .fill {
+  background: #ff4a3a;
+  animation: pulse 0.8s infinite alternate;
+}
+@keyframes pulse {
+  to {
+    opacity: 0.6;
+  }
+}
+.consumables {
+  display: flex;
+  gap: 4px;
+}
+.cons {
+  position: relative;
+  width: 40px;
+  height: 40px;
+  background: rgba(0, 0, 0, 0.35);
+}
+.cons img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.cons .c {
+  position: absolute;
+  right: 3px;
+  bottom: 0;
+  font-size: 14px;
+  font-weight: 700;
+}
+.cons .k {
+  position: absolute;
+  left: 3px;
+  top: 0;
+  font-size: 11px;
+  opacity: 0.8;
+}
+.weapons {
+  position: absolute;
+  right: 26px;
+  bottom: 70px;
+  text-align: right;
+  opacity: 0;
+}
+.weapons.on {
+  opacity: 1;
+}
+.ammo {
+  font-size: 38px;
+  font-weight: 700;
+  line-height: 1;
+}
+.ammo .mag.low {
+  color: #ff5040;
+}
+.ammo .sep,
+.ammo .res {
+  font-size: 24px;
+  opacity: 0.75;
+  margin-left: 4px;
+}
+.wname {
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+}
+.wmode {
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  opacity: 0.75;
+}
+.slots {
+  position: absolute;
+  right: 26px;
+  bottom: 18px;
+  display: flex;
+  gap: 4px;
+}
+.slot {
+  position: relative;
+  display: none;
+  width: 96px;
+  height: 44px;
+  background: rgba(0, 0, 0, 0.4);
+  border-bottom: 2px solid transparent;
+}
+.slot.has {
+  display: block;
+}
+.slot.active {
+  background: rgba(255, 255, 255, 0.16);
+  border-bottom-color: #fff;
+}
+.slot img {
+  position: absolute;
+  inset: 2px 6px 10px 16px;
+  width: calc(100% - 22px);
+  height: 32px;
+  object-fit: contain;
+}
+.slot .k {
+  position: absolute;
+  left: 4px;
+  top: 2px;
+  font-size: 12px;
+  font-weight: 700;
+}
+.slot .nm {
+  position: absolute;
+  right: 4px;
+  bottom: 1px;
+  font-size: 11px;
+  opacity: 0.85;
+}
