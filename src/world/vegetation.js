@@ -4,7 +4,7 @@ import { RNG } from "../core/rng.js";
 import { createNoise2D, fbm2 } from "../core/noise.js";
 import { F_ALL, F_BULLET, MAT } from "./collision.js";
 import { plotBounds } from "./layout.js";
-import { needleTexture, needleBulkTexture, leafTexture, bushTexture } from "./foliage.js";
+import { needleTexture, needleBulkTexture, leafTexture, bushTexture, FOLIAGE_NORMAL_BEGIN } from "./foliage.js";
 
 // ---------------------------------------------------------------- geometry assembly
 
@@ -399,6 +399,11 @@ export function createVegetation(data, collision, assets, ctx, quality) {
       metalness: 0,
     });
     windify(m, uniforms, 0.012);
+    const wind = m.onBeforeCompile;
+    m.onBeforeCompile = (shader) => {
+      wind(shader);
+      shader.fragmentShader = shader.fragmentShader.replace("#include <normal_fragment_begin>", FOLIAGE_NORMAL_BEGIN);
+    };
     return m;
   };
   const needleMat = leafMat(needleTexture(), 0xb8c8a0);

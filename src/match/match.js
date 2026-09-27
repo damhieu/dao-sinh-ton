@@ -773,7 +773,11 @@ export class Match {
     else if (p.mode === "vehicle" && p.vehicle)
       opts = { orbit: true, orbitDist: 8.5, orbitUp: 1.8, eyeHeight: 1.6 };
     this.gcam.update(dt, camChar, opts);
-    p.anim.hidden = p.alive && this.gcam.mode3 === "fpp";
+    // our own body is hidden in first person and when walls squeeze the camera into it (it would fill
+    // the screen and flash with every turn); the gap between the two limits stops it toggling
+    const boom = this.gcam.boom;
+    if (!p.alive || boom > 0.8) p.anim.hidden = false;
+    else if (boom < 0.55) p.anim.hidden = true;
     this.rig.update(dt, this.ctx.camera);
     this.held.update(this.characters, p.anim.hidden ? p : null);
     this.viewmodel.update(dt, p, this.gcam, this.input.dx, this.input.dy);

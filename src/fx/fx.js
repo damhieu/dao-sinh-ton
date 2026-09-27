@@ -13,13 +13,20 @@ export class FX {
     this.light.castShadow = false;
     scene.add(this.light);
     this.lightT = 0;
+    this.lightDur = 1;
+    this.lightPeak = 0;
   }
 
-  muzzleLight(x, y, z, isPlayer) {
+  // Short light pulse that fades out. Gunfire stays subtle: a strong on/off light on every shot
+  // made the whole screen strobe during automatic fire. Explosions get a bigger, longer flash.
+  muzzleLight(x, y, z, isPlayer, explosion = false) {
     if (!isPlayer) return;
     this.light.position.set(x, y, z);
-    this.light.intensity = 26;
-    this.lightT = 0.05;
+    this.light.distance = explosion ? 22 : 5;
+    this.lightPeak = explosion ? 60 : 2.5;
+    this.lightDur = explosion ? 0.35 : 0.06;
+    this.lightT = this.lightDur;
+    this.light.intensity = this.lightPeak;
   }
 
   clear() {
@@ -34,8 +41,9 @@ export class FX {
     this.particles.update(dt);
     this.tracers.update(dt, camera);
     if (this.lightT > 0) {
-      this.lightT -= dt;
-      if (this.lightT <= 0) this.light.intensity = 0;
+      this.lightT = Math.max(0, this.lightT - dt);
+      const k = this.lightT / this.lightDur;
+      this.light.intensity = this.lightPeak * k * k;
     }
   }
 }

@@ -28,6 +28,8 @@ export class GameCamera {
     this.shake = 0;
     this.kickPitch = 0;
     this.orbitDist = 6;
+    this.colFrac = 1; // share of the desired boom length currently clear of obstacles
+    this.boom = 3;
     this.forward = new THREE.Vector3(0, 0, -1);
     this.right = new THREE.Vector3(1, 0, 0);
     this.up = new THREE.Vector3(0, 1, 0);
@@ -70,7 +72,7 @@ export class GameCamera {
       const d = opts.orbitDist ?? this.orbitDist;
       cam.position.copy(this.pivot).addScaledVector(this.forward, -d);
       cam.position.y += opts.orbitUp ?? 1.2;
-      this.collide(this.pivot, cam.position);
+      this.collide(this.pivot, cam.position, dt);
     } else if (mode === "fpp") {
       cam.position.copy(this.pivot).addScaledVector(this.forward, 0.12);
       cam.position.y += 0.02;
@@ -82,7 +84,7 @@ export class GameCamera {
         .addScaledVector(this.up, 0.18)
         .addScaledVector(this.forward, -this.curDist);
       cam.position.y += 0.12;
-      this.collide(this.pivot, cam.position);
+      this.collide(this.pivot, cam.position, dt);
     }
 
     // shake
@@ -106,16 +108,19 @@ export class GameCamera {
     }
     this.kickPitch *= Math.exp(-dt * 6);
     this.mode3 = mode;
+    // distance from the head pivot to the camera (0 in first person)
+    this.boom = mode === "fpp" ? 0 : cam.position.distanceTo(this.pivot);
   }
 
-  // pull the camera in front of obstacles between pivot and desired position
-  collide(from, to) {
+  // Pull the camera in front of obstacles between pivot and desired position: at once when something
+  // gets in the way (never look through walls), but ease back out once it is clear, so the view
+  // does not snap back and forth past corners. Tree trunks are ignored (the camera passes them).
+  collide(from, to, dt) {
     const dx = to.x - from.x;
     const dy = to.y - from.y;
     const dz = to.z - from.z;
     const len = Math.hypot(dx, dy, dz);
     if (len < 1e-3) return;
-    const col = this.world.collision;
     const ux = dx / len;
     const uy = dy / len;
     const uz = dz / len;
@@ -133,15 +138,30 @@ export class GameCamera {
       const ox = from.x + this.right.x * a + this.up.x * c;
       const oy = from.y + this.right.y * a + this.up.y * c;
       const oz = from.z + this.right.z * a + this.up.z * c;
-      if (col.raycast(ox, oy, oz, ux, uy, uz, best, F_VISION, _hit)) {
-        // offset rays that start inside geometry (pivot hugging a wall) are ignored
-        if (_hit.t > 0.05 || (a === 0 && c === 0)) best = Math.min(best, _hit.t);
-      }
+      const t = this.rayNoTrees(ox, oy, oz, ux, uy, uz, best);
+      // offset rays that start inside geometry (pivot hugging a wall) are ignored
+      if (t >= 0 && (t > 0.05 || (a === 0 && c === 0))) best = Math.min(best, t);
     }
-    if (best < len + 0.3) {
-      const t = Math.max(0.12, best - 0.3);
-      to.set(from.x + ux * t, from.y + uy * t, from.z + uz * t);
+    const clear = best < len + 0.3 ? Math.max(0.12, best - 0.3) / len : 1;
+    this.colFrac = clear < this.colFrac ? clear : this.colFrac + (clear - this.colFrac) * Math.min(1, dt * 5);
+    const t = len * this.colFrac;
+    to.set(from.x + ux * t, from.y + uy * t, from.z + uz * t);
+  }
+
+  // distance to the first vision blocker that is not a tree trunk (cylinder), or -1
+  rayNoTrees(ox, oy, oz, ux, uy, uz, maxT) {
+    const col = this.world.collision;
+    let skipped = 0;
+    for (let k = 0; k < 4; k++) {
+      if (!col.raycast(ox, oy, oz, ux, uy, uz, maxT - skipped, F_VISION, _hit)) return -1;
+      if (_hit.kind !== "cyl") return skipped + _hit.t;
+      const step = _hit.t + 0.05;
+      ox += ux * step;
+      oy += uy * step;
+      oz += uz * step;
+      skipped += step;
     }
+    return -1;
   }
 
   // World point under the crosshair (for aiming in third person)

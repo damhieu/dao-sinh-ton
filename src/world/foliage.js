@@ -1,5 +1,11 @@
-// Procedurally painted foliage textures (canvas) for tree/bush cards.
+// Foliage helpers: procedurally painted textures (canvas) for tree/bush cards and the shared
+// double-sided normal fix.
 import * as THREE from "three";
+
+// Double-sided foliage keeps its normal on the back face too: three.js flips it for DoubleSide
+// materials, which turns every blade/card seen from behind nearly black and makes them strobe as
+// they turn with the wind and the camera.
+export const FOLIAGE_NORMAL_BEGIN = THREE.ShaderChunk.normal_fragment_begin.replace("normal *= faceDirection;", "");
 
 function rng(seed) {
   let s = seed >>> 0;

@@ -32,7 +32,8 @@ const FRAG = /* glsl */ `
     float s1 = 0.5 + 0.5 * sin(u * 0.35 - uTime * 1.2);
     float s2 = 0.5 + 0.5 * sin(u * 0.9 + vWorld.y * 0.04 + uTime * 0.8);
     float cell = floor(u * 0.25);
-    float flicker = hash(cell + floor(uTime * 2.0)) * 0.35;
+    // slow per-cell shimmer with a random phase (a random value per half second made the wall twinkle)
+    float flicker = (0.5 + 0.5 * sin(uTime * 0.9 + hash(cell) * 6.2831)) * 0.35;
     float streaks = s1 * 0.55 + s2 * 0.3 + flicker;
     float dist = length(cameraPosition - vWorld);
     float nearFade = smoothstep(1.0, 30.0, dist);

@@ -2,6 +2,7 @@
 // snap to the camera without popping; heights come from the heightmap texture, density from a mask.
 import * as THREE from "three";
 import { plotBounds } from "./layout.js";
+import { FOLIAGE_NORMAL_BEGIN } from "./foliage.js";
 
 const TILE = 4;
 
@@ -126,7 +127,8 @@ const GRASS_VERT = /* glsl */ `
   float dens = texture2D(uDensity, (wp + uHalf) / (2.0 * uHalf)).r;
   // thin out with distance, fade at the edge
   float distKeep = mix(1.0, 0.35, smoothstep(uRadius * 0.25, uRadius, dist));
-  float keep = step(r3, dens * distKeep);
+  // blades shrink/grow around the thinning threshold instead of popping in and out while moving
+  float keep = smoothstep(r3 - 0.08, r3 + 0.08, dens * distKeep);
   float edge = 1.0 - smoothstep(uRadius * 0.8, uRadius, dist);
   float hgt = uBladeH * (0.55 + r1 * 0.75) * (0.6 + 0.4 * dens) * keep * edge * (1.0 + smoothstep(uRadius * 0.3, uRadius, dist) * 0.6);
   float wid = 0.032 + r2 * 0.028 + smoothstep(uRadius * 0.3, uRadius, dist) * 0.07;
@@ -168,12 +170,13 @@ function makeGrassMesh(radius, density, seed, uniformsBase, bladeH, ctx) {
     shader.fragmentShader = shader.fragmentShader
       .replace("#include <common>", "#include <common>\nvarying vec3 vGrassColor;\nvarying float vGrassY;")
       .replace("#include <map_fragment>", "diffuseColor.rgb = vGrassColor;")
+      .replace("#include <normal_fragment_begin>", FOLIAGE_NORMAL_BEGIN)
       .replace(
         "#include <aomap_fragment>",
         "reflectedLight.indirectDiffuse *= mix(0.45, 1.0, vGrassY);\nreflectedLight.directDiffuse *= mix(0.55, 1.0, vGrassY);",
       );
   };
-  mat.customProgramCacheKey = () => "grass-v1";
+  mat.customProgramCacheKey = () => "grass-v2";
   const mesh = new THREE.Mesh(geo, mat);
   mesh.frustumCulled = false;
   mesh.receiveShadow = true;

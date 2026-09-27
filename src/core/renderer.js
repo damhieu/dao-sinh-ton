@@ -147,20 +147,34 @@ export function createRenderer(canvas, settings) {
 
   ctx.resize = resize;
 
-  // Dynamic resolution: nudge the render scale to hold ~60 FPS.
+  // Dynamic resolution: nudge the render scale to hold ~60 FPS. Uses the median frame time of each
+  // second (a single hitch does not count), can scale back up on a 60 Hz display, and waits a few
+  // seconds after stepping down so the resolution does not pump up and down every second.
   let accT = 0;
-  let accN = 0;
+  const frameTimes = [];
+  let fastSeconds = 0;
+  let hold = 0;
   ctx.updateDynamicRes = (dt) => {
     if (!ctx.dynamicRes) return;
     accT += dt;
-    accN++;
+    frameTimes.push(dt);
     if (accT < 1) return;
-    const avg = accT / accN;
     accT = 0;
-    accN = 0;
+    frameTimes.sort((a, b) => a - b);
+    const median = frameTimes[frameTimes.length >> 1];
+    frameTimes.length = 0;
+    hold = Math.max(0, hold - 1);
     let s = ctx.dynamicScale;
-    if (avg > 1 / 52) s = Math.max(0.6, s - 0.08);
-    else if (avg < 1 / 64 && s < 1) s = Math.min(1, s + 0.04);
+    if (median > 1 / 50) {
+      s = Math.max(0.6, s - 0.08);
+      fastSeconds = 0;
+      hold = 5;
+    } else if (median < 1 / 57) {
+      if (++fastSeconds >= 3 && hold === 0 && s < 1) {
+        s = Math.min(1, s + 0.04);
+        fastSeconds = 0;
+      }
+    } else fastSeconds = 0;
     if (Math.abs(s - ctx.dynamicScale) > 0.001) {
       ctx.dynamicScale = s;
       resize();

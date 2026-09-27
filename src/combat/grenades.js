@@ -250,10 +250,7 @@ export class Grenades {
     m.fx.particles.emit("blast", g.x, g.y + 0.3, g.z, 0, 0.6, 0, 10, 1);
     m.fx.particles.emit("dust", g.x, g.y + 0.1, g.z, 0, 1, 0, 14, 2.5);
     m.fx.particles.emit("sparks", g.x, g.y + 0.3, g.z, 0, 1, 0, 20, 1.5);
-    m.fx.muzzleLight(g.x, g.y + 1, g.z, true);
-    m.fx.light.intensity = 160;
-    m.fx.light.distance = 25;
-    m.fx.lightT = 0.12;
+    m.fx.muzzleLight(g.x, g.y + 1, g.z, true, true);
     for (const ch of m.characters) {
       if (!ch.alive || ch.mode === "plane") continue;
       const b = ch.body;
