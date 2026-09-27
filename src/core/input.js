@@ -112,8 +112,9 @@ export class Input {
   lock() {
     if (!this.locked && this.element.requestPointerLock) {
       const r = this.element.requestPointerLock({ unadjustedMovement: true });
-      // Some browsers reject unadjustedMovement; fall back to a plain request.
-      if (r && r.catch) r.catch(() => this.element.requestPointerLock());
+      // Some browsers reject unadjustedMovement; fall back to a plain request, which can be refused
+      // too (e.g. right after Esc) — the player simply clicks again.
+      if (r && r.catch) r.catch(() => this.element.requestPointerLock()?.catch(() => {}));
     }
   }
 

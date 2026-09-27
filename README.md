@@ -2,6 +2,8 @@
 
 Game battle royale phong cách PUBG chạy ngay trên trình duyệt (three.js + WebGL2). Bạn nhảy dù xuống **Đảo Hải Âu** cùng 49 bot AI, nhặt vũ khí, trang bị, luôn ở trong vùng an toàn ("bo") và cố trở thành người cuối cùng còn sống.
 
+**▶ Chơi ngay trên trình duyệt: https://damhieu.github.io/dao-sinh-ton/** (máy tính có chuột và bàn phím; lần đầu tải khoảng 40 MB).
+
 Toàn bộ mô hình (nhân vật, súng, nhà cửa, xe, cây cối) và âm thanh được tạo bằng code. Texture và bầu trời lấy từ Poly Haven (CC0). Game không dùng logo, nhãn hiệu hay tài nguyên nào của PUBG.
 
 ## Tính năng chính
@@ -54,6 +56,8 @@ Các lệnh khác:
 | `npm run preview`      | Chạy thử bản build                                                   |
 | `npm test`             | Chạy unit test (`node --test`)                                       |
 | `npm run fetch-assets` | Tải lại texture/HDRI từ Poly Haven (đã có sẵn trong `public/assets`) |
+
+Mỗi lần push lên nhánh `main`, GitHub Actions ([deploy.yml](.github/workflows/deploy.yml)) chạy test, build rồi đăng bản mới lên GitHub Pages.
 
 ## Điều khiển
 
